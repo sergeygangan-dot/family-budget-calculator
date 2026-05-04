@@ -1,0 +1,2944 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Калькулятор семейного бюджета — остатки и кредиты</title>
+
+  <!--
+    ============================================================
+    КАЛЬКУЛЯТОР СЕМЕЙНОГО БЮДЖЕТА — ВЕРСИЯ V3 EXCEL — БЕЗ СКРОЛЛА СТРАНИЦЫ
+    ============================================================
+
+    Что доработано по сравнению с предыдущей версией:
+    1. JSON импорт/экспорт заменён на Excel .xlsx.
+    2. Блок лимитов переделан: крупные поля, удобная таблица лимитов.
+    3. Уменьшен вертикальный скролл: более широкая сетка, компактные карточки,
+       операции и аналитика расположены рядом, а не длинной колонкой.
+    4. Полностью сохранена работа без сервера: данные хранятся в браузере.
+    5. Улучшена безопасность вывода: пользовательские данные не вставляются
+       через опасный innerHTML в таблицу операций.
+
+    Важно про Excel:
+    - Для настоящего .xlsx используется библиотека SheetJS через CDN.
+    - Если открыть файл без интернета, калькулятор будет работать, но импорт
+      и экспорт Excel могут быть недоступны до загрузки библиотеки.
+    - Все остальные функции работают локально.
+
+    ============================================================
+  -->
+
+  <!-- SheetJS нужен для настоящего импорта/экспорта Excel .xlsx -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --bg2: #eaf1ff;
+      --card: #ffffff;
+      --card2: #f8fafc;
+      --text: #162033;
+      --muted: #64748b;
+      --border: #dbe4f0;
+      --primary: #2563eb;
+      --primary2: #1d4ed8;
+      --success: #16a34a;
+      --danger: #dc2626;
+      --warning: #d97706;
+      --soft-blue: #eaf2ff;
+      --soft-green: #eaf8ef;
+      --soft-red: #fff0f0;
+      --soft-warn: #fff7ed;
+      --input: #ffffff;
+      --shadow: 0 14px 35px rgba(15, 23, 42, 0.08);
+      --radius: 18px;
+      --radius-sm: 12px;
+      --bar: #e2e8f0;
+    }
+
+    body.theme-dark {
+      --bg: #081120;
+      --bg2: #0f172a;
+      --card: #111827;
+      --card2: #0f172a;
+      --text: #e5e7eb;
+      --muted: #94a3b8;
+      --border: #263244;
+      --primary: #60a5fa;
+      --primary2: #3b82f6;
+      --success: #4ade80;
+      --danger: #fb7185;
+      --warning: #fbbf24;
+      --soft-blue: #13243d;
+      --soft-green: #0f2b1d;
+      --soft-red: #2a1518;
+      --soft-warn: #2d2111;
+      --input: #0b1220;
+      --shadow: 0 16px 36px rgba(0, 0, 0, 0.38);
+      --bar: #263244;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background:
+        radial-gradient(circle at top left, var(--bg2) 0, transparent 320px),
+        linear-gradient(180deg, var(--bg) 0%, var(--bg2) 100%);
+      color: var(--text);
+      line-height: 1.45;
+      min-height: 100vh;
+    }
+
+    button, input, select { font: inherit; }
+
+    button {
+      border: 0;
+      border-radius: var(--radius-sm);
+      padding: 11px 14px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: transform .15s ease, opacity .15s ease, background .15s ease;
+      white-space: nowrap;
+    }
+
+    button:hover { transform: translateY(-1px); }
+    button:active { transform: translateY(0); }
+    button:disabled { cursor: not-allowed; opacity: .55; transform: none; }
+
+    input, select {
+      width: 100%;
+      min-width: 0;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 11px 12px;
+      background: var(--input);
+      color: var(--text);
+      outline: none;
+      transition: border-color .15s ease, box-shadow .15s ease;
+    }
+
+    input:focus, select:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 4px rgba(37, 99, 235, .13);
+    }
+
+    label {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 12px;
+      font-weight: 900;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .035em;
+    }
+
+    .app {
+      width: min(1540px, calc(100% - 28px));
+      margin: 0 auto;
+      padding: 16px 0 28px;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(420px, 1fr) 520px;
+      gap: 14px;
+      align-items: stretch;
+      margin-bottom: 14px;
+    }
+
+    .card, .hero-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+
+    .hero-card { padding: 18px; }
+
+    .badge {
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      padding: 6px 10px;
+      margin-bottom: 10px;
+      border-radius: 999px;
+      background: var(--soft-blue);
+      color: var(--primary);
+      font-weight: 900;
+      font-size: 12px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: clamp(28px, 3vw, 44px);
+      line-height: 1.03;
+      letter-spacing: -.045em;
+    }
+
+    h2 {
+      margin: 0 0 12px;
+      font-size: 20px;
+      letter-spacing: -.025em;
+    }
+
+    h3 {
+      margin: 0 0 10px;
+      font-size: 16px;
+      letter-spacing: -.015em;
+    }
+
+    .subtitle {
+      margin: 0;
+      color: var(--muted);
+      max-width: 880px;
+      font-size: 14px;
+    }
+
+    .settings-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .settings-grid .full { grid-column: 1 / -1; }
+
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .summary-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px 13px;
+      box-shadow: var(--shadow);
+      min-width: 0;
+    }
+
+    .summary-title {
+      font-size: 11px;
+      color: var(--muted);
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      margin-bottom: 5px;
+    }
+
+    .summary-title-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 5px;
+    }
+
+    .summary-title-row .summary-title {
+      margin-bottom: 0;
+      min-width: 0;
+    }
+
+    .summary-switch {
+      width: auto;
+      max-width: 142px;
+      flex: 0 0 auto;
+      padding: 4px 7px;
+      border-radius: 8px;
+      font-size: 10px;
+      font-weight: 800;
+      color: var(--text);
+      background: var(--input);
+    }
+
+    .summary-value {
+      font-size: clamp(20px, 1.85vw, 30px);
+      line-height: 1.05;
+      font-weight: 950;
+      letter-spacing: -.04em;
+      word-break: break-word;
+    }
+
+    .summary-note {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .value-income, .positive { color: var(--success); }
+    .value-expense, .negative { color: var(--danger); }
+    .warning { color: var(--warning); }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: 360px minmax(520px, 1fr) 390px;
+      gap: 14px;
+      align-items: start;
+    }
+
+    .column {
+      display: grid;
+      gap: 14px;
+      min-width: 0;
+    }
+
+    .card {
+      padding: 16px;
+      min-width: 0;
+    }
+
+    .compact-form {
+      display: grid;
+      gap: 10px;
+    }
+
+    .two-cols {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .three-cols {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 10px;
+    }
+
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-primary:hover { background: var(--primary2); }
+    .btn-secondary { background: var(--soft-blue); color: var(--primary); }
+    .btn-success { background: var(--soft-green); color: var(--success); }
+    .btn-danger { background: var(--soft-red); color: var(--danger); }
+    .btn-ghost { background: var(--card2); color: var(--text); border: 1px solid var(--border); }
+
+    .button-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .button-row > * { flex: 1 1 auto; }
+
+    .tool-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: end;
+      margin-bottom: 10px;
+    }
+
+    .tool-row button { flex: 1 1 150px; }
+
+    .filters {
+      display: grid;
+      grid-template-columns: minmax(210px, 1.3fr) minmax(140px, .7fr) minmax(160px, .9fr);
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .table-wrap {
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: auto;
+      max-height: 430px;
+      background: var(--card2);
+    }
+
+    table {
+      width: 100%;
+      min-width: 760px;
+      border-collapse: collapse;
+      background: var(--card);
+    }
+
+    th, td {
+      padding: 11px 10px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      vertical-align: middle;
+      font-size: 13px;
+    }
+
+    th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: var(--card2);
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+    }
+
+    tr:last-child td { border-bottom: 0; }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 5px 9px;
+      font-size: 12px;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+
+    .tag-income { background: var(--soft-green); color: var(--success); }
+    .tag-expense { background: var(--soft-red); color: var(--danger); }
+
+    .row-actions {
+      display: flex;
+      gap: 6px;
+    }
+
+    .small-btn {
+      padding: 7px 9px;
+      font-size: 12px;
+      border-radius: 10px;
+    }
+
+    .empty-box {
+      padding: 18px;
+      min-height: 70px;
+      display: grid;
+      place-items: center;
+      text-align: center;
+      color: var(--muted);
+      background: var(--card2);
+      border: 1px dashed var(--border);
+      border-radius: 14px;
+    }
+
+    .tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 12px;
+      padding: 4px;
+      background: var(--card2);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+    }
+
+    .tab-btn {
+      flex: 1 1 78px;
+      padding: 9px 8px;
+      background: transparent;
+      color: var(--muted);
+      border-radius: 10px;
+      border: 0;
+    }
+
+    .tab-btn.active {
+      background: var(--card);
+      color: var(--primary);
+      box-shadow: 0 5px 16px rgba(15, 23, 42, .08);
+    }
+
+    .tab-panel[hidden] { display: none; }
+
+    .category-form {
+      display: grid;
+      grid-template-columns: 105px 1fr 120px;
+      gap: 10px;
+      align-items: end;
+    }
+
+    .limit-form {
+      display: grid;
+      grid-template-columns: minmax(180px, 1.2fr) minmax(140px, .8fr) 150px;
+      gap: 10px;
+      align-items: end;
+    }
+
+    .balance-form {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      align-items: end;
+    }
+
+    .credit-form {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      align-items: end;
+    }
+
+    .credit-form .full, .balance-form .full { grid-column: 1 / -1; }
+
+    .credit-chip {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 4px 8px;
+      font-size: 11px;
+      font-weight: 900;
+      background: var(--soft-blue);
+      color: var(--primary);
+      white-space: nowrap;
+    }
+
+    .list {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+      max-height: 260px;
+      overflow: auto;
+      padding-right: 2px;
+    }
+
+    .list-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: center;
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--card2);
+    }
+
+    .list-title {
+      min-width: 0;
+      font-weight: 900;
+      word-break: break-word;
+    }
+
+    .list-meta {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    .analytics-list {
+      display: grid;
+      gap: 9px;
+      max-height: 310px;
+      overflow: auto;
+      padding-right: 2px;
+    }
+
+    .bar-card {
+      padding: 11px;
+      border: 1px solid var(--border);
+      border-radius: 13px;
+      background: var(--card2);
+    }
+
+    .bar-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 13px;
+      font-weight: 900;
+      margin-bottom: 8px;
+    }
+
+    .bar-track {
+      height: 10px;
+      border-radius: 999px;
+      overflow: hidden;
+      background: var(--bar);
+    }
+
+    .bar-fill {
+      height: 100%;
+      width: 0%;
+      border-radius: inherit;
+      background: var(--primary);
+      transition: width .25s ease;
+    }
+
+    .bar-fill.expense { background: var(--danger); }
+    .bar-fill.income { background: var(--success); }
+    .bar-fill.warn { background: var(--warning); }
+
+    .limit-table {
+      width: 100%;
+      min-width: 0;
+    }
+
+    .limit-table th, .limit-table td { font-size: 12px; padding: 9px 8px; }
+
+    .limit-status {
+      display: inline-flex;
+      border-radius: 999px;
+      padding: 4px 8px;
+      font-size: 11px;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+
+    .status-ok { background: var(--soft-green); color: var(--success); }
+    .status-warn { background: var(--soft-warn); color: var(--warning); }
+    .status-bad { background: var(--soft-red); color: var(--danger); }
+
+    .tips {
+      display: grid;
+      gap: 9px;
+      max-height: 260px;
+      overflow: auto;
+      padding-right: 2px;
+    }
+
+    .tip {
+      padding: 11px;
+      border: 1px solid var(--border);
+      border-radius: 13px;
+      background: var(--card2);
+      font-size: 13px;
+    }
+
+    .tip.good { border-color: rgba(22, 163, 74, .35); background: var(--soft-green); }
+    .tip.warn { border-color: rgba(217, 119, 6, .38); background: var(--soft-warn); }
+    .tip.bad { border-color: rgba(220, 38, 38, .35); background: var(--soft-red); }
+
+    .mini-stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .mini-stat {
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 13px;
+      background: var(--card2);
+      min-width: 0;
+    }
+
+    .mini-label {
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      font-weight: 900;
+    }
+
+    .mini-value {
+      margin-top: 4px;
+      font-size: 17px;
+      font-weight: 950;
+      letter-spacing: -.03em;
+    }
+
+    .notice {
+      padding: 11px;
+      border-radius: 13px;
+      background: var(--soft-blue);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .hidden { display: none !important; }
+
+    .footer {
+      text-align: center;
+      margin-top: 18px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    @media (max-width: 1280px) {
+      .hero { grid-template-columns: 1fr; }
+      .workspace { grid-template-columns: 380px 1fr; }
+      .right-column { grid-column: 1 / -1; grid-template-columns: 1fr 1fr; }
+      .summary { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    /*
+      ============================================================
+      V3: режим рабочего стола без прокрутки всей страницы
+      ============================================================
+      Цель: весь калькулятор должен помещаться в высоту экрана.
+      Поэтому страница не скроллится, а прокрутка включена внутри
+      рабочих областей. Главная прокрутка операций находится строго
+      внутри блока «Операции», у правой кромки этого блока.
+    */
+    @media (min-width: 1181px) {
+      html,
+      body {
+        height: 100%;
+        overflow: hidden;
+      }
+
+      body {
+        min-height: 100vh;
+      }
+
+      .app {
+        width: min(1740px, calc(100% - 16px));
+        height: 100vh;
+        height: 100dvh;
+        padding: 8px 0;
+        display: grid;
+        grid-template-rows: auto auto minmax(0, 1fr);
+        gap: 8px;
+        overflow: hidden;
+      }
+
+      .hero {
+        grid-template-columns: minmax(460px, 1fr) 520px;
+        gap: 8px;
+        margin: 0;
+        min-height: 0;
+      }
+
+      .hero-card {
+        padding: 10px 12px;
+        border-radius: 14px;
+      }
+
+      .badge {
+        margin-bottom: 5px;
+        padding: 4px 8px;
+        font-size: 10px;
+      }
+
+      h1 {
+        margin: 0 0 4px;
+        font-size: clamp(22px, 1.65vw, 30px);
+      }
+
+      h2 {
+        margin-bottom: 7px;
+        font-size: 15px;
+      }
+
+      h3 {
+        margin-bottom: 6px;
+        font-size: 13px;
+      }
+
+      .subtitle {
+        font-size: 12px;
+        line-height: 1.25;
+        max-width: none;
+      }
+
+      label {
+        margin-bottom: 3px;
+        font-size: 10px;
+      }
+
+      input,
+      select {
+        padding: 7px 8px;
+        border-radius: 9px;
+        font-size: 12px;
+      }
+
+      button {
+        padding: 8px 10px;
+        border-radius: 9px;
+        font-size: 12px;
+      }
+
+      .settings-grid {
+        grid-template-columns: 1fr 1fr 1fr auto auto;
+        gap: 6px;
+        align-items: end;
+      }
+
+      .settings-grid .full {
+        grid-column: auto;
+      }
+
+      .summary {
+        gap: 8px;
+        margin: 0;
+      }
+
+      .summary-card {
+        padding: 8px 10px;
+        border-radius: 13px;
+      }
+
+      .summary-title {
+        margin-bottom: 2px;
+        font-size: 9px;
+      }
+
+      .summary-value {
+        font-size: clamp(18px, 1.65vw, 25px);
+        line-height: 1;
+      }
+
+      .summary-note {
+        display: none;
+      }
+
+      .workspace {
+        grid-template-columns: 350px minmax(580px, 1fr) 430px;
+        gap: 8px;
+        align-items: stretch;
+        min-height: 0;
+        height: 100%;
+        overflow: hidden;
+      }
+
+      .column {
+        gap: 8px;
+        height: 100%;
+        min-height: 0;
+        overflow: hidden;
+      }
+
+      .left-column {
+        grid-template-rows: auto minmax(0, 1fr);
+      }
+
+      .center-column {
+        grid-template-rows: minmax(0, 1.7fr) minmax(0, .75fr);
+      }
+
+      .right-column {
+        grid-template-rows: minmax(0, .95fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, .75fr);
+      }
+
+      .right-column .card:nth-child(3) {
+        display: none;
+      }
+
+      .card {
+        min-height: 0;
+        overflow: hidden;
+        padding: 10px;
+        border-radius: 13px;
+      }
+
+      .compact-form,
+      .two-cols,
+      .three-cols,
+      .filters,
+      .category-form,
+      .limit-form,
+      .balance-form,
+      .credit-form {
+        gap: 6px;
+      }
+
+      .compact-form {
+        gap: 6px;
+      }
+
+      .category-form {
+        grid-template-columns: 86px minmax(0, 1fr) 96px;
+      }
+
+      /* Лимиты: поля крупнее и читабельнее, без узких колонок */
+      .limit-form {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .limit-form button {
+        grid-column: 1 / -1;
+        width: 100%;
+      }
+
+      .balance-form,
+      .credit-form {
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .balance-form .full,
+      .credit-form .full {
+        grid-column: 1 / -1;
+      }
+
+      .left-column .card:nth-child(2),
+      .center-column .card,
+      .right-column .card {
+        display: flex;
+        flex-direction: column;
+      }
+
+      .tabs {
+        flex: 0 0 auto;
+        margin-bottom: 7px;
+        padding: 3px;
+        border-radius: 12px;
+      }
+
+      .tab-btn {
+        padding: 7px 8px;
+      }
+
+      .tab-panel:not([hidden]) {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        flex: 1 1 auto;
+      }
+
+      .list,
+      .analytics-list,
+      .tips {
+        flex: 1 1 auto;
+        min-height: 0;
+        max-height: none;
+        overflow-y: auto;
+        overflow-x: hidden;
+        padding-right: 3px;
+        scrollbar-gutter: stable;
+      }
+
+      .list {
+        margin-top: 8px;
+      }
+
+      .list-row {
+        padding: 8px;
+        border-radius: 10px;
+      }
+
+      .list-title {
+        font-size: 12px;
+      }
+
+      .list-meta {
+        font-size: 10px;
+      }
+
+      .filters {
+        flex: 0 0 auto;
+        grid-template-columns: minmax(200px, 1.4fr) minmax(120px, .7fr) minmax(160px, .9fr);
+        margin-bottom: 6px;
+      }
+
+      .tool-row {
+        flex: 0 0 auto;
+        gap: 6px;
+        margin-bottom: 6px;
+      }
+
+      .tool-row button {
+        flex: 1 1 0;
+        min-width: 0;
+      }
+
+      /* Главная зона прокрутки операций: scrollbar у правой кромки поля */
+      .center-column .card:first-child .table-wrap {
+        flex: 1 1 auto;
+        min-height: 0;
+        max-height: none;
+        overflow-y: auto;
+        overflow-x: auto;
+        scrollbar-gutter: stable;
+      }
+
+      .right-column .table-wrap {
+        flex: 1 1 auto;
+        min-height: 0;
+        max-height: none !important;
+        overflow-y: auto;
+        overflow-x: auto;
+        scrollbar-gutter: stable;
+      }
+
+      table {
+        min-width: 720px;
+      }
+
+      .limit-table {
+        min-width: 0;
+      }
+
+      th,
+      td {
+        padding: 7px 7px;
+        font-size: 12px;
+      }
+
+      th {
+        font-size: 10px;
+      }
+
+      .tag {
+        padding: 4px 7px;
+        font-size: 10px;
+      }
+
+      .row-actions {
+        gap: 4px;
+      }
+
+      .small-btn {
+        padding: 5px 6px;
+        font-size: 10px;
+      }
+
+      .empty-box {
+        min-height: 0;
+        padding: 10px;
+        font-size: 12px;
+      }
+
+      .mini-stats {
+        flex: 0 0 auto;
+        gap: 6px;
+        margin-bottom: 6px;
+      }
+
+      .mini-stat {
+        padding: 7px;
+        border-radius: 10px;
+      }
+
+      .mini-label {
+        font-size: 9px;
+      }
+
+      .mini-value {
+        margin-top: 2px;
+        font-size: 14px;
+      }
+
+      .bar-card {
+        padding: 8px;
+        border-radius: 10px;
+      }
+
+      .bar-head {
+        margin-bottom: 6px;
+        font-size: 12px;
+      }
+
+      .bar-track {
+        height: 8px;
+      }
+
+      .tip,
+      .notice {
+        padding: 8px;
+        font-size: 12px;
+        border-radius: 10px;
+      }
+
+      .footer {
+        display: none;
+      }
+    }
+
+    @media (max-width: 1180px) {
+      html,
+      body {
+        overflow: auto;
+      }
+    }
+
+    @media (max-width: 860px) {
+      .app { width: min(100% - 18px, 1540px); padding-top: 10px; height: auto; display: block; overflow: visible; }
+      .workspace, .right-column { grid-template-columns: 1fr; }
+      .summary { grid-template-columns: 1fr; }
+      .settings-grid, .two-cols, .three-cols, .filters, .category-form, .limit-form, .balance-form, .credit-form { grid-template-columns: 1fr; }
+      .hero-card, .card, .summary-card { padding: 14px; }
+      .tool-row button, .button-row button { flex-basis: 100%; }
+      .table-wrap { max-height: none; }
+    }
+  </style>
+</head>
+<body class="theme-dark">
+  <main class="app">
+    <section class="hero">
+      <div class="hero-card">
+        <h1>Калькулятор семейного бюджета</h1>
+        <p class="subtitle">
+          Ведите семейный бюджет по месяцам: доходы, расходы, начальный остаток, кредитные платежи, лимиты и долю накоплений. Данные сохраняются только в вашем браузере.
+        </p>
+      </div>
+
+      <div class="hero-card">
+        <div class="settings-grid">
+          <div>
+            <label for="monthFilter">Месяц расчёта</label>
+            <input type="month" id="monthFilter" />
+          </div>
+          <div>
+            <label for="currencySelect">Валюта</label>
+            <select id="currencySelect">
+              <option value="₽">₽ Рубли</option>
+              <option value="$">$ Доллары</option>
+              <option value="€">€ Евро</option>
+              <option value="₸">₸ Тенге</option>
+              <option value="₴">₴ Гривны</option>
+              <option value="BYN">BYN Бел. рубли</option>
+            </select>
+          </div>
+          <div>
+            <label for="savingTarget">Цель по накоплениям, %</label>
+            <input type="number" id="savingTarget" min="0" max="100" step="1" />
+          </div>
+          <div>
+            <label>&nbsp;</label>
+            <button class="btn-primary" id="saveSettingsBtn" type="button">Сохранить</button>
+          </div>
+          <div class="full">
+            <button class="btn-ghost" id="themeToggleBtn" type="button">Сменить тему</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="summary" aria-label="Сводка бюджета">
+      <div class="summary-card">
+        <div class="summary-title">Доходы месяца</div>
+        <div class="summary-value value-income" id="totalIncome">0 ₽</div>
+        <div class="summary-note">Все поступления за месяц</div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-title">Расходы месяца</div>
+        <div class="summary-value value-expense" id="totalExpense">0 ₽</div>
+        <div class="summary-note">Без кредитных платежей</div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-title">Остаток на начало месяца</div>
+        <div class="summary-value" id="openingBalanceSummary">0 ₽</div>
+        <div class="summary-note">Перенесён из прошлого месяца</div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-title-row">
+          <div class="summary-title">Кредиты</div>
+          <select id="creditSummaryMode" class="summary-switch" aria-label="Что показывать в графе кредиты">
+            <option value="payment">Платёж месяца</option>
+            <option value="debt">Остаток долга</option>
+          </select>
+        </div>
+        <div class="summary-value value-expense" id="creditPaymentsSummary">0 ₽</div>
+        <div class="summary-note" id="creditSummaryNote">По активным кредитам</div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-title-row">
+          <div class="summary-title">Остаток</div>
+          <select id="balanceSummaryMode" class="summary-switch" aria-label="Какой остаток показывать">
+            <option value="total">На конец месяца</option>
+            <option value="period">За месяц</option>
+          </select>
+        </div>
+        <div class="summary-value" id="totalBalance">0 ₽</div>
+        <div class="summary-note" id="balanceSummaryNote">С учётом начального остатка</div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-title">Доля накоплений</div>
+        <div class="summary-value" id="savingRate">0%</div>
+        <div class="summary-note" id="savingNote">Остаток за месяц / доходы · цель: 10%</div>
+      </div>
+    </section>
+
+    <section class="workspace">
+      <div class="column left-column">
+        <section class="card">
+          <h2 id="formTitle">Новая операция</h2>
+          <form id="budgetForm" class="compact-form">
+            <div class="two-cols">
+              <div>
+                <label for="operationType">Тип операции</label>
+                <select id="operationType" required>
+                  <option value="income">Доход</option>
+                  <option value="expense">Расход</option>
+                </select>
+              </div>
+              <div>
+                <label for="operationCategory">Категория</label>
+                <select id="operationCategory" required></select>
+              </div>
+            </div>
+            <div>
+              <label for="operationDescription">Описание</label>
+              <input id="operationDescription" type="text" placeholder="Например: зарплата, продукты, бензин" maxlength="90" />
+            </div>
+            <div class="two-cols">
+              <div>
+                <label for="operationAmount">Сумма операции</label>
+                <input id="operationAmount" type="number" min="0.01" step="0.01" placeholder="Например: 1500" required />
+              </div>
+              <div>
+                <label for="operationDate">Дата</label>
+                <input id="operationDate" type="date" required />
+              </div>
+            </div>
+            <div class="button-row">
+              <button class="btn-primary" id="submitBtn" type="submit">Добавить</button>
+              <button class="btn-ghost hidden" id="cancelEditBtn" type="button">Отменить</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="card">
+          <div class="tabs" role="tablist">
+            <button class="tab-btn active" type="button" data-tab="categories">Мои категории</button>
+            <button class="tab-btn" type="button" data-tab="limits">Лимиты</button>
+            <button class="tab-btn" type="button" data-tab="carryover">Начальный остаток</button>
+            <button class="tab-btn" type="button" data-tab="credits">Кредиты</button>
+          </div>
+
+          <div class="tab-panel" id="tabCategories">
+            <h2>Мои категории</h2>
+            <div class="category-form">
+              <div>
+                <label for="customCategoryType">Тип</label>
+                <select id="customCategoryType">
+                  <option value="income">Доход</option>
+                  <option value="expense">Расход</option>
+                </select>
+              </div>
+              <div>
+                <label for="customCategoryName">Название категории</label>
+                <input id="customCategoryName" type="text" placeholder="Например: Репетитор" maxlength="45" />
+              </div>
+              <button class="btn-success" id="addCategoryBtn" type="button">Добавить</button>
+            </div>
+            <div class="list" id="customCategoriesList"></div>
+          </div>
+
+          <div class="tab-panel" id="tabLimits" hidden>
+            <h2>Лимиты расходов</h2>
+            <div class="limit-form">
+              <div>
+                <label for="limitCategorySelect">Категория расхода</label>
+                <select id="limitCategorySelect"></select>
+              </div>
+              <div>
+                <label for="limitAmountInput">Лимит на месяц</label>
+                <input id="limitAmountInput" type="number" min="0" step="0.01" placeholder="Например: 25000" />
+              </div>
+              <button class="btn-success" id="saveLimitBtn" type="button">Сохранить лимит</button>
+            </div>
+            <div class="list" id="limitsList"></div>
+          </div>
+
+          <div class="tab-panel" id="tabCarryover" hidden>
+            <h2>Начальный остаток</h2>
+            <div class="balance-form">
+              <div>
+                <label for="openingBalanceInput">Остаток на начало месяца</label>
+                <input id="openingBalanceInput" type="number" step="0.01" placeholder="Например: 12000" />
+              </div>
+              <button class="btn-success" id="saveOpeningBalanceBtn" type="button">Сохранить остаток</button>
+              <button class="btn-secondary full" id="calcOpeningFromPreviousBtn" type="button">Перенести из прошлого месяца</button>
+            </div>
+            <div class="notice" style="margin-top:10px;">
+              Остаток на конец месяца = остаток на начало месяца + доходы месяца − расходы месяца − кредитные платежи месяца.
+            </div>
+            <div class="list" id="openingBalancesList"></div>
+          </div>
+
+          <div class="tab-panel" id="tabCredits" hidden>
+            <h2>Кредиты и обязательные платежи</h2>
+            <div class="credit-form">
+              <div class="full">
+                <label for="creditNameInput">Название кредита</label>
+                <input id="creditNameInput" type="text" maxlength="70" placeholder="Например: Ипотека, автокредит, кредитная карта" />
+              </div>
+              <div>
+                <label for="creditPaymentInput">Платёж в месяц</label>
+                <input id="creditPaymentInput" type="number" min="0" step="0.01" placeholder="Например: 18500" />
+              </div>
+              <div>
+                <label for="creditBalanceInput">Остаток долга</label>
+                <input id="creditBalanceInput" type="number" min="0" step="0.01" placeholder="Необязательно" />
+              </div>
+              <div>
+                <label for="creditDueDayInput">День платежа</label>
+                <input id="creditDueDayInput" type="number" min="1" max="31" step="1" placeholder="Например: 15" />
+              </div>
+              <div>
+                <label for="creditActiveSelect">Статус</label>
+                <select id="creditActiveSelect">
+                  <option value="active">Активен</option>
+                  <option value="inactive">Не учитывать</option>
+                </select>
+              </div>
+              <button class="btn-success" id="saveCreditBtn" type="button">Сохранить кредит</button>
+              <button class="btn-ghost hidden" id="cancelCreditEditBtn" type="button">Отменить</button>
+            </div>
+            <div class="notice" style="margin-top:10px;">
+              Кредитные платежи учитываются отдельно от обычных расходов, чтобы не смешивать бытовые траты и долговую нагрузку.
+            </div>
+            <div class="list" id="creditsList"></div>
+          </div>
+        </section>
+      </div>
+
+      <div class="column center-column">
+        <section class="card">
+          <h2>Операции</h2>
+          <div class="filters">
+            <div>
+              <label for="searchInput">Поиск</label>
+              <input id="searchInput" type="text" placeholder="Описание, категория, сумма или дата" />
+            </div>
+            <div>
+              <label for="typeFilter">Тип</label>
+              <select id="typeFilter">
+                <option value="all">Все</option>
+                <option value="income">Доходы</option>
+                <option value="expense">Расходы</option>
+              </select>
+            </div>
+            <div>
+              <label for="categoryFilter">Категория</label>
+              <select id="categoryFilter">
+                <option value="all">Все категории</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="tool-row">
+            <button class="btn-secondary" id="exportExcelBtn" type="button">Экспорт Excel</button>
+            <button class="btn-secondary" id="importExcelBtn" type="button">Импорт Excel</button>
+            <button class="btn-danger" id="clearOperationsBtn" type="button">Очистить операции</button>
+            <button class="btn-danger" id="resetAllBtn" type="button">Сбросить всё</button>
+          </div>
+          <input id="excelFileInput" class="hidden" type="file" accept=".xlsx,.xls,.csv" />
+
+          <div class="table-wrap" id="tableWrap">
+            <table aria-label="Операции бюджета">
+              <thead>
+                <tr>
+                  <th>Дата</th>
+                  <th>Тип</th>
+                  <th>Категория</th>
+                  <th>Описание</th>
+                  <th>Сумма</th>
+                  <th>Действия</th>
+                </tr>
+              </thead>
+              <tbody id="operationsTableBody"></tbody>
+            </table>
+          </div>
+          <div class="empty-box hidden" id="emptyState">За выбранный месяц операций пока нет.</div>
+        </section>
+
+        <section class="card">
+          <h2>Аналитика месяца</h2>
+          <div class="mini-stats">
+            <div class="mini-stat">
+              <div class="mini-label">Операций</div>
+              <div class="mini-value" id="operationsCount">0</div>
+            </div>
+            <div class="mini-stat">
+              <div class="mini-label">Крупнейший расход</div>
+              <div class="mini-value" id="topExpenseValue">0 ₽</div>
+            </div>
+            <div class="mini-stat">
+              <div class="mini-label">Использование лимитов</div>
+              <div class="mini-value" id="limitsUsageValue">0%</div>
+            </div>
+            <div class="mini-stat">
+              <div class="mini-label">Остаток за месяц</div>
+              <div class="mini-value" id="monthlyFlowValue">0 ₽</div>
+            </div>
+          </div>
+          <div class="analytics-list" id="monthAnalytics"></div>
+        </section>
+      </div>
+
+      <div class="column right-column">
+        <section class="card">
+          <h2>Лимиты расходов</h2>
+          <div class="table-wrap" style="max-height: 290px;">
+            <table class="limit-table" aria-label="Лимиты расходов">
+              <thead>
+                <tr>
+                  <th>Категория</th>
+                  <th>Факт</th>
+                  <th>Лимит</th>
+                  <th>Статус</th>
+                </tr>
+              </thead>
+              <tbody id="limitsTableBody"></tbody>
+            </table>
+          </div>
+          <div class="empty-box hidden" id="limitsEmpty">Лимиты расходов пока не заданы.</div>
+        </section>
+
+        <section class="card">
+          <h2>Расходы по категориям</h2>
+          <div class="analytics-list" id="expenseBreakdown"></div>
+        </section>
+
+        <section class="card">
+          <h2>Доходы по категориям</h2>
+          <div class="analytics-list" id="incomeBreakdown"></div>
+        </section>
+
+        <section class="card">
+          <h2>Подсказки</h2>
+          <div class="tips" id="tipsList"></div>
+        </section>
+
+        <section class="card">
+          <h2>Кредитные платежи месяца</h2>
+          <div class="table-wrap" style="max-height: 220px;">
+            <table class="limit-table" aria-label="Кредитные платежи месяца">
+              <thead>
+                <tr>
+                  <th>Кредит</th>
+                  <th>Платёж</th>
+                  <th>Дата</th>
+                  <th>Статус</th>
+                </tr>
+              </thead>
+              <tbody id="creditsTableBody"></tbody>
+            </table>
+          </div>
+          <div class="empty-box hidden" id="creditsEmpty">Кредитные платежи пока не заданы.</div>
+        </section>
+      </div>
+    </section>
+
+    <div class="footer">Семейный бюджет · Excel .xlsx · локальное хранение · один HTML-файл</div>
+  </main>
+
+  <script>
+    const STORAGE_KEY = "familyBudgetCalculatorData_v1";
+
+    const defaultCategories = {
+      income: [
+        "Зарплата", "Подработка", "Бизнес", "Пособия", "Пенсия",
+        "Инвестиции", "Подарки", "Возврат долга", "Прочий доход"
+      ],
+      expense: [
+        "Продукты", "Жильё", "Коммунальные платежи", "Транспорт", "Автомобиль",
+        "Связь и интернет", "Кредиты", "Ипотека", "Медицина", "Образование",
+        "Одежда", "Дети", "Питомцы", "Развлечения", "Подарки", "Путешествия",
+        "Накопления", "Непредвиденные расходы", "Прочий расход"
+      ]
+    };
+
+    let state = loadState();
+    let editingOperationId = null;
+    let editingCreditId = null;
+
+    const elements = {
+      monthFilter: document.getElementById("monthFilter"),
+      currencySelect: document.getElementById("currencySelect"),
+      savingTarget: document.getElementById("savingTarget"),
+      saveSettingsBtn: document.getElementById("saveSettingsBtn"),
+      themeToggleBtn: document.getElementById("themeToggleBtn"),
+
+      totalIncome: document.getElementById("totalIncome"),
+      totalExpense: document.getElementById("totalExpense"),
+      openingBalanceSummary: document.getElementById("openingBalanceSummary"),
+      creditPaymentsSummary: document.getElementById("creditPaymentsSummary"),
+      creditSummaryMode: document.getElementById("creditSummaryMode"),
+      creditSummaryNote: document.getElementById("creditSummaryNote"),
+      totalBalance: document.getElementById("totalBalance"),
+      balanceSummaryMode: document.getElementById("balanceSummaryMode"),
+      balanceSummaryNote: document.getElementById("balanceSummaryNote"),
+      savingRate: document.getElementById("savingRate"),
+      savingNote: document.getElementById("savingNote"),
+
+      budgetForm: document.getElementById("budgetForm"),
+      formTitle: document.getElementById("formTitle"),
+      operationType: document.getElementById("operationType"),
+      operationCategory: document.getElementById("operationCategory"),
+      operationDescription: document.getElementById("operationDescription"),
+      operationAmount: document.getElementById("operationAmount"),
+      operationDate: document.getElementById("operationDate"),
+      submitBtn: document.getElementById("submitBtn"),
+      cancelEditBtn: document.getElementById("cancelEditBtn"),
+
+      searchInput: document.getElementById("searchInput"),
+      typeFilter: document.getElementById("typeFilter"),
+      categoryFilter: document.getElementById("categoryFilter"),
+
+      exportExcelBtn: document.getElementById("exportExcelBtn"),
+      importExcelBtn: document.getElementById("importExcelBtn"),
+      excelFileInput: document.getElementById("excelFileInput"),
+      clearOperationsBtn: document.getElementById("clearOperationsBtn"),
+      resetAllBtn: document.getElementById("resetAllBtn"),
+
+      operationsTableBody: document.getElementById("operationsTableBody"),
+      tableWrap: document.getElementById("tableWrap"),
+      emptyState: document.getElementById("emptyState"),
+
+      customCategoryType: document.getElementById("customCategoryType"),
+      customCategoryName: document.getElementById("customCategoryName"),
+      addCategoryBtn: document.getElementById("addCategoryBtn"),
+      customCategoriesList: document.getElementById("customCategoriesList"),
+
+      limitCategorySelect: document.getElementById("limitCategorySelect"),
+      limitAmountInput: document.getElementById("limitAmountInput"),
+      saveLimitBtn: document.getElementById("saveLimitBtn"),
+      limitsList: document.getElementById("limitsList"),
+      limitsTableBody: document.getElementById("limitsTableBody"),
+      limitsEmpty: document.getElementById("limitsEmpty"),
+
+      openingBalanceInput: document.getElementById("openingBalanceInput"),
+      saveOpeningBalanceBtn: document.getElementById("saveOpeningBalanceBtn"),
+      calcOpeningFromPreviousBtn: document.getElementById("calcOpeningFromPreviousBtn"),
+      openingBalancesList: document.getElementById("openingBalancesList"),
+
+      creditNameInput: document.getElementById("creditNameInput"),
+      creditPaymentInput: document.getElementById("creditPaymentInput"),
+      creditBalanceInput: document.getElementById("creditBalanceInput"),
+      creditDueDayInput: document.getElementById("creditDueDayInput"),
+      creditActiveSelect: document.getElementById("creditActiveSelect"),
+      saveCreditBtn: document.getElementById("saveCreditBtn"),
+      cancelCreditEditBtn: document.getElementById("cancelCreditEditBtn"),
+      creditsList: document.getElementById("creditsList"),
+      creditsTableBody: document.getElementById("creditsTableBody"),
+      creditsEmpty: document.getElementById("creditsEmpty"),
+
+      monthAnalytics: document.getElementById("monthAnalytics"),
+      operationsCount: document.getElementById("operationsCount"),
+      topExpenseValue: document.getElementById("topExpenseValue"),
+      limitsUsageValue: document.getElementById("limitsUsageValue"),
+      monthlyFlowValue: document.getElementById("monthlyFlowValue"),
+      expenseBreakdown: document.getElementById("expenseBreakdown"),
+      incomeBreakdown: document.getElementById("incomeBreakdown"),
+      tipsList: document.getElementById("tipsList"),
+
+      tabButtons: Array.from(document.querySelectorAll(".tab-btn")),
+      tabCategories: document.getElementById("tabCategories"),
+      tabLimits: document.getElementById("tabLimits"),
+      tabCarryover: document.getElementById("tabCarryover"),
+      tabCredits: document.getElementById("tabCredits")
+    };
+
+    init();
+
+    function init() {
+      elements.monthFilter.value = state.settings.month || getCurrentMonth();
+      elements.currencySelect.value = state.settings.currency || "₽";
+      elements.savingTarget.value = Number(state.settings.savingTarget ?? 10);
+      elements.creditSummaryMode.value = state.settings.creditSummaryMode === "debt" ? "debt" : "payment";
+      elements.balanceSummaryMode.value = state.settings.balanceSummaryMode === "period" ? "period" : "total";
+      elements.operationDate.value = getTodayDate();
+      applyTheme(state.settings.theme || "dark");
+
+      refreshAllCategorySelects();
+
+      elements.saveSettingsBtn.addEventListener("click", handleSaveSettings);
+      elements.themeToggleBtn.addEventListener("click", handleThemeToggle);
+      elements.creditSummaryMode.addEventListener("change", handleSummaryModeChange);
+      elements.balanceSummaryMode.addEventListener("change", handleSummaryModeChange);
+      elements.monthFilter.addEventListener("change", function () {
+        state.settings.month = elements.monthFilter.value;
+        saveState();
+        preloadOpeningBalance();
+        render();
+      });
+
+      elements.operationType.addEventListener("change", function () {
+        fillCategorySelect(elements.operationCategory, elements.operationType.value);
+      });
+      elements.budgetForm.addEventListener("submit", handleFormSubmit);
+      elements.cancelEditBtn.addEventListener("click", cancelEditing);
+      elements.operationsTableBody.addEventListener("click", handleTableActions);
+
+      elements.searchInput.addEventListener("input", render);
+      elements.typeFilter.addEventListener("change", render);
+      elements.categoryFilter.addEventListener("change", render);
+
+      elements.exportExcelBtn.addEventListener("click", exportExcel);
+      elements.importExcelBtn.addEventListener("click", function () { elements.excelFileInput.click(); });
+      elements.excelFileInput.addEventListener("change", importExcel);
+      elements.clearOperationsBtn.addEventListener("click", clearOperations);
+      elements.resetAllBtn.addEventListener("click", resetAllData);
+
+      elements.addCategoryBtn.addEventListener("click", addCustomCategory);
+      elements.customCategoryName.addEventListener("keydown", function (event) {
+        if (event.key === "Enter") addCustomCategory();
+      });
+      elements.saveLimitBtn.addEventListener("click", saveLimit);
+      elements.limitCategorySelect.addEventListener("change", preloadLimitAmount);
+      elements.saveOpeningBalanceBtn.addEventListener("click", saveOpeningBalance);
+      elements.calcOpeningFromPreviousBtn.addEventListener("click", calculateOpeningFromPreviousMonth);
+      elements.saveCreditBtn.addEventListener("click", saveCredit);
+      elements.cancelCreditEditBtn.addEventListener("click", cancelCreditEditing);
+
+      elements.tabButtons.forEach(function (button) {
+        button.addEventListener("click", function () { setActiveTab(button.dataset.tab); });
+      });
+
+      preloadOpeningBalance();
+      render();
+    }
+
+    function loadState() {
+      const fallback = {
+        operations: [],
+        settings: { currency: "₽", savingTarget: 10, theme: "dark", month: getCurrentMonth(), creditSummaryMode: "payment", balanceSummaryMode: "total" },
+        userCategories: { income: [], expense: [] },
+        limits: {},
+        openingBalances: {},
+        credits: []
+      };
+
+      try {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (!saved) return fallback;
+        const parsed = JSON.parse(saved);
+        return normalizeState(parsed, fallback);
+      } catch (error) {
+        console.warn("Не удалось загрузить данные:", error);
+        return fallback;
+      }
+    }
+
+    function normalizeState(parsed, fallback) {
+      const operations = Array.isArray(parsed.operations)
+        ? parsed.operations.filter(isValidOperationLike).map(normalizeOperationObject)
+        : [];
+
+      const settings = {
+        currency: String(parsed.settings?.currency || fallback.settings.currency),
+        savingTarget: safeNumber(parsed.settings?.savingTarget, 10),
+        theme: parsed.settings?.theme === "light" ? "light" : "dark",
+        month: normalizeMonth(parsed.settings?.month) || fallback.settings.month,
+        creditSummaryMode: parsed.settings?.creditSummaryMode === "debt" ? "debt" : "payment",
+        balanceSummaryMode: parsed.settings?.balanceSummaryMode === "period" ? "period" : "total"
+      };
+
+      const userCategories = {
+        income: normalizeStringArray(parsed.userCategories?.income || parsed.customCategories?.income || []),
+        expense: normalizeStringArray(parsed.userCategories?.expense || parsed.customCategories?.expense || [])
+      };
+
+      const limits = normalizeLimits(parsed.limits || {});
+      const openingBalances = normalizeOpeningBalances(parsed.openingBalances || parsed.carryoverBalances || {});
+      const credits = Array.isArray(parsed.credits)
+        ? parsed.credits.filter(isValidCreditLike).map(normalizeCreditObject)
+        : [];
+
+      return { operations: ensureUniqueOperationIds(operations), settings, userCategories, limits, openingBalances, credits: ensureUniqueCreditIds(credits) };
+    }
+
+    function saveState() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      } catch (error) {
+        alert("Не удалось сохранить данные в браузере. Возможно, localStorage недоступен.");
+        console.error(error);
+      }
+    }
+
+    function handleSaveSettings() {
+      const target = safeNumber(elements.savingTarget.value, 10);
+      state.settings.currency = elements.currencySelect.value;
+      state.settings.savingTarget = target >= 0 ? target : 10;
+      state.settings.month = elements.monthFilter.value || getCurrentMonth();
+      state.settings.creditSummaryMode = elements.creditSummaryMode.value === "debt" ? "debt" : "payment";
+      state.settings.balanceSummaryMode = elements.balanceSummaryMode.value === "period" ? "period" : "total";
+      saveState();
+      render();
+      alert("Настройки сохранены.");
+    }
+
+    function handleSummaryModeChange() {
+      state.settings.creditSummaryMode = elements.creditSummaryMode.value === "debt" ? "debt" : "payment";
+      state.settings.balanceSummaryMode = elements.balanceSummaryMode.value === "period" ? "period" : "total";
+      saveState();
+      render();
+    }
+
+    function handleThemeToggle() {
+      state.settings.theme = state.settings.theme === "dark" ? "light" : "dark";
+      applyTheme(state.settings.theme);
+      saveState();
+    }
+
+    function applyTheme(theme) {
+      const normalized = theme === "light" ? "light" : "dark";
+      document.body.classList.toggle("theme-dark", normalized === "dark");
+      elements.themeToggleBtn.textContent = normalized === "dark" ? "Светлая тема" : "Тёмная тема";
+    }
+
+    function handleFormSubmit(event) {
+      event.preventDefault();
+      const operation = {
+        id: editingOperationId || createId(),
+        type: elements.operationType.value,
+        category: elements.operationCategory.value,
+        description: cleanText(elements.operationDescription.value) || "Без описания",
+        amount: safeNumber(elements.operationAmount.value, 0),
+        date: elements.operationDate.value,
+        createdAt: new Date().toISOString()
+      };
+
+      if (!isValidOperationLike(operation)) {
+        alert("Проверьте тип, категорию, дату и сумму операции.");
+        return;
+      }
+
+      if (editingOperationId) {
+        const index = state.operations.findIndex(function (item) { return item.id === editingOperationId; });
+        if (index !== -1) state.operations[index] = { ...state.operations[index], ...operation };
+        cancelEditing(false);
+      } else {
+        state.operations.push(operation);
+        elements.operationDescription.value = "";
+        elements.operationAmount.value = "";
+        elements.operationDate.value = getTodayDate();
+      }
+
+      saveState();
+      refreshAllCategorySelects();
+      render();
+    }
+
+    function handleTableActions(event) {
+      const button = event.target.closest("button");
+      if (!button) return;
+      const id = button.dataset.id;
+      if (button.dataset.action === "edit") startEditing(id);
+      if (button.dataset.action === "delete") deleteOperation(id);
+    }
+
+    function startEditing(id) {
+      const operation = state.operations.find(function (item) { return item.id === id; });
+      if (!operation) return;
+      editingOperationId = operation.id;
+      elements.formTitle.textContent = "Редактировать операцию";
+      elements.submitBtn.textContent = "Сохранить";
+      elements.cancelEditBtn.classList.remove("hidden");
+      elements.operationType.value = operation.type;
+      fillCategorySelect(elements.operationCategory, operation.type);
+      elements.operationCategory.value = operation.category;
+      elements.operationDescription.value = operation.description;
+      elements.operationAmount.value = operation.amount;
+      elements.operationDate.value = operation.date;
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+
+    function cancelEditing(shouldRender = true) {
+      editingOperationId = null;
+      elements.formTitle.textContent = "Новая операция";
+      elements.submitBtn.textContent = "Добавить";
+      elements.cancelEditBtn.classList.add("hidden");
+      elements.budgetForm.reset();
+      elements.operationType.value = "income";
+      fillCategorySelect(elements.operationCategory, "income");
+      elements.operationDate.value = getTodayDate();
+      if (shouldRender) render();
+    }
+
+    function deleteOperation(id) {
+      const operation = state.operations.find(function (item) { return item.id === id; });
+      if (!operation) return;
+      const ok = confirm("Удалить операцию?\n\n" + operation.category + " — " + operation.description + " — " + formatMoney(operation.amount));
+      if (!ok) return;
+      state.operations = state.operations.filter(function (item) { return item.id !== id; });
+      if (editingOperationId === id) cancelEditing(false);
+      saveState();
+      render();
+    }
+
+    function addCustomCategory() {
+      const type = elements.customCategoryType.value;
+      const name = cleanText(elements.customCategoryName.value);
+      if (!name) {
+        alert("Введите название категории.");
+        return;
+      }
+      if (!state.userCategories[type]) state.userCategories[type] = [];
+      if (getAllCategories(type).some(function (category) { return category.toLowerCase() === name.toLowerCase(); })) {
+        alert("Такая категория уже есть.");
+        return;
+      }
+      state.userCategories[type].push(name);
+      elements.customCategoryName.value = "";
+      saveState();
+      refreshAllCategorySelects();
+      render();
+    }
+
+    function deleteCustomCategory(type, category) {
+      const used = state.operations.some(function (operation) { return operation.category === category; });
+      if (used) {
+        alert("Эта категория уже используется в операциях. Сначала измените или удалите связанные операции.");
+        return;
+      }
+      if (state.limits[category]) delete state.limits[category];
+      state.userCategories[type] = state.userCategories[type].filter(function (item) { return item !== category; });
+      saveState();
+      refreshAllCategorySelects();
+      render();
+    }
+
+    function saveLimit() {
+      const category = elements.limitCategorySelect.value;
+      const amount = safeNumber(elements.limitAmountInput.value, 0);
+      if (!category) {
+        alert("Выберите категорию расхода.");
+        return;
+      }
+      if (amount <= 0) {
+        const remove = confirm("Лимит не указан или равен нулю. Удалить лимит для категории «" + category + "»?");
+        if (remove) delete state.limits[category];
+      } else {
+        state.limits[category] = amount;
+      }
+      elements.limitAmountInput.value = "";
+      saveState();
+      render();
+    }
+
+    function preloadLimitAmount() {
+      const category = elements.limitCategorySelect.value;
+      elements.limitAmountInput.value = state.limits[category] ? String(state.limits[category]) : "";
+    }
+
+    function setActiveTab(tab) {
+      elements.tabButtons.forEach(function (button) {
+        button.classList.toggle("active", button.dataset.tab === tab);
+      });
+      elements.tabCategories.hidden = tab !== "categories";
+      elements.tabLimits.hidden = tab !== "limits";
+      elements.tabCarryover.hidden = tab !== "carryover";
+      elements.tabCredits.hidden = tab !== "credits";
+    }
+
+    function render() {
+      const operations = getFilteredOperations();
+      const totals = calculateTotals(operations);
+      renderSummary(totals);
+      renderTable(operations);
+      renderCustomCategories();
+      renderLimitsEditor();
+      renderCarryoverEditor(totals);
+      renderCreditsEditor();
+      renderLimitsTable(operations);
+      renderCreditsTable(totals);
+      renderAnalytics(operations, totals);
+      renderBreakdown(operations, "expense", elements.expenseBreakdown);
+      renderBreakdown(operations, "income", elements.incomeBreakdown);
+      renderTips(operations, totals);
+    }
+
+    function getFilteredOperations() {
+      const selectedMonth = elements.monthFilter.value;
+      const selectedType = elements.typeFilter.value;
+      const selectedCategory = elements.categoryFilter.value;
+      const search = cleanText(elements.searchInput.value).toLowerCase();
+
+      return state.operations
+        .filter(function (operation) {
+          const matchesMonth = selectedMonth ? operation.date.startsWith(selectedMonth) : true;
+          const matchesType = selectedType === "all" ? true : operation.type === selectedType;
+          const matchesCategory = selectedCategory === "all" ? true : operation.category === selectedCategory;
+          const searchable = [operation.date, operation.type, operation.category, operation.description, operation.amount]
+            .join(" ").toLowerCase();
+          const matchesSearch = search ? searchable.includes(search) : true;
+          return matchesMonth && matchesType && matchesCategory && matchesSearch;
+        })
+        .sort(function (a, b) { return new Date(b.date) - new Date(a.date); });
+    }
+
+    function calculateTotals(operations) {
+      const selectedMonth = elements.monthFilter.value || state.settings.month || getCurrentMonth();
+      const income = operations.filter(function (op) { return op.type === "income"; }).reduce(function (sum, op) { return sum + Number(op.amount); }, 0);
+      const expense = operations.filter(function (op) { return op.type === "expense"; }).reduce(function (sum, op) { return sum + Number(op.amount); }, 0);
+      const openingBalance = getOpeningBalance(selectedMonth);
+      const creditPayments = getMonthlyCreditPayments(selectedMonth);
+      const creditDebt = getTotalCreditDebt();
+      const monthlyBalance = income - expense - creditPayments;
+      const balance = openingBalance + monthlyBalance;
+      return {
+        income,
+        expense,
+        openingBalance,
+        creditPayments,
+        creditDebt,
+        monthlyBalance,
+        balance,
+        savingRate: income > 0 ? (monthlyBalance / income) * 100 : 0
+      };
+    }
+
+    function renderSummary(totals) {
+      elements.totalIncome.textContent = formatMoney(totals.income);
+      elements.totalExpense.textContent = formatMoney(totals.expense);
+      elements.openingBalanceSummary.textContent = formatMoney(totals.openingBalance);
+
+      const creditMode = elements.creditSummaryMode.value === "debt" ? "debt" : "payment";
+      const creditValue = creditMode === "debt" ? totals.creditDebt : totals.creditPayments;
+      elements.creditPaymentsSummary.textContent = formatMoney(creditValue);
+      elements.creditSummaryNote.textContent = creditMode === "debt"
+        ? "По активным кредитам"
+        : "По активным кредитам";
+
+      const balanceMode = elements.balanceSummaryMode.value === "period" ? "period" : "total";
+      const balanceValue = balanceMode === "period" ? totals.monthlyBalance : totals.balance;
+      elements.totalBalance.textContent = formatMoney(balanceValue);
+      elements.balanceSummaryNote.textContent = balanceMode === "period"
+        ? "Доходы − расходы − кредитные платежи"
+        : "С учётом начального остатка";
+      elements.totalBalance.classList.toggle("positive", balanceValue >= 0);
+      elements.totalBalance.classList.toggle("negative", balanceValue < 0);
+
+      const target = safeNumber(state.settings.savingTarget, 10);
+      elements.savingRate.textContent = formatPercent(totals.savingRate);
+      elements.savingNote.textContent = "Остаток за месяц / доходы · цель: " + target + "%";
+      elements.savingRate.classList.toggle("positive", totals.savingRate >= target);
+      elements.savingRate.classList.toggle("negative", totals.savingRate < target);
+    }
+
+    function renderTable(operations) {
+      clearNode(elements.operationsTableBody);
+      const hasRows = operations.length > 0;
+      elements.tableWrap.classList.toggle("hidden", !hasRows);
+      elements.emptyState.classList.toggle("hidden", hasRows);
+      if (!hasRows) return;
+
+      operations.forEach(function (operation) {
+        const row = document.createElement("tr");
+        appendCell(row, formatDate(operation.date));
+
+        const typeCell = document.createElement("td");
+        const tag = document.createElement("span");
+        tag.className = "tag " + (operation.type === "income" ? "tag-income" : "tag-expense");
+        tag.textContent = operation.type === "income" ? "Доход" : "Расход";
+        typeCell.appendChild(tag);
+        row.appendChild(typeCell);
+
+        appendCell(row, operation.category);
+        appendCell(row, operation.description);
+
+        const amountCell = document.createElement("td");
+        amountCell.className = operation.type === "income" ? "positive" : "negative";
+        amountCell.style.fontWeight = "900";
+        amountCell.textContent = (operation.type === "income" ? "+ " : "− ") + formatMoney(operation.amount);
+        row.appendChild(amountCell);
+
+        const actions = document.createElement("td");
+        const actionWrap = document.createElement("div");
+        actionWrap.className = "row-actions";
+        const editBtn = makeButton("Изменить", "btn-ghost small-btn", { action: "edit", id: operation.id });
+        const deleteBtn = makeButton("Удалить", "btn-danger small-btn", { action: "delete", id: operation.id });
+        actionWrap.append(editBtn, deleteBtn);
+        actions.appendChild(actionWrap);
+        row.appendChild(actions);
+
+        elements.operationsTableBody.appendChild(row);
+      });
+    }
+
+    function renderCustomCategories() {
+      clearNode(elements.customCategoriesList);
+      const rows = [];
+      ["income", "expense"].forEach(function (type) {
+        (state.userCategories[type] || []).forEach(function (category) {
+          rows.push({ type, category });
+        });
+      });
+
+      if (rows.length === 0) {
+        elements.customCategoriesList.appendChild(makeEmptyBox("Пользовательских категорий пока нет."));
+        return;
+      }
+
+      rows.forEach(function (row) {
+        const item = document.createElement("div");
+        item.className = "list-row";
+        const text = document.createElement("div");
+        const title = document.createElement("div");
+        title.className = "list-title";
+        title.textContent = row.category;
+        const meta = document.createElement("div");
+        meta.className = "list-meta";
+        meta.textContent = row.type === "income" ? "Доход" : "Расход";
+        text.append(title, meta);
+        const btn = document.createElement("button");
+        btn.className = "btn-danger small-btn";
+        btn.type = "button";
+        btn.textContent = "Удалить";
+        btn.addEventListener("click", function () { deleteCustomCategory(row.type, row.category); });
+        item.append(text, btn);
+        elements.customCategoriesList.appendChild(item);
+      });
+    }
+
+    function renderLimitsEditor() {
+      clearNode(elements.limitsList);
+      const entries = Object.entries(state.limits).filter(function ([, value]) { return Number(value) > 0; });
+      if (entries.length === 0) {
+        elements.limitsList.appendChild(makeEmptyBox("Лимиты пока не заданы."));
+        return;
+      }
+      entries.sort(function (a, b) { return a[0].localeCompare(b[0], "ru"); });
+      entries.forEach(function ([category, limit]) {
+        const item = document.createElement("div");
+        item.className = "list-row";
+        const text = document.createElement("div");
+        const title = document.createElement("div");
+        title.className = "list-title";
+        title.textContent = category;
+        const meta = document.createElement("div");
+        meta.className = "list-meta";
+        meta.textContent = "Лимит: " + formatMoney(limit);
+        text.append(title, meta);
+        const btn = document.createElement("button");
+        btn.className = "btn-danger small-btn";
+        btn.type = "button";
+        btn.textContent = "Удалить";
+        btn.addEventListener("click", function () {
+          delete state.limits[category];
+          saveState();
+          render();
+        });
+        item.append(text, btn);
+        elements.limitsList.appendChild(item);
+      });
+    }
+
+    function saveOpeningBalance() {
+      const month = elements.monthFilter.value || getCurrentMonth();
+      const amount = safeNumber(elements.openingBalanceInput.value, 0);
+      state.openingBalances[month] = amount;
+      saveState();
+      render();
+    }
+
+    function preloadOpeningBalance() {
+      if (!elements.openingBalanceInput) return;
+      const month = elements.monthFilter.value || getCurrentMonth();
+      elements.openingBalanceInput.value = String(getOpeningBalance(month));
+    }
+
+    function calculateOpeningFromPreviousMonth() {
+      const month = elements.monthFilter.value || getCurrentMonth();
+      const previousMonth = shiftMonth(month, -1);
+      const previousClosing = calculateMonthClosingBalance(previousMonth);
+      state.openingBalances[month] = previousClosing;
+      elements.openingBalanceInput.value = String(previousClosing);
+      saveState();
+      render();
+      alert("Остаток на начало месяца перенесён из прошлого месяца: " + formatMoney(previousClosing));
+    }
+
+    function renderCarryoverEditor(totals) {
+      preloadOpeningBalance();
+      clearNode(elements.openingBalancesList);
+      const month = elements.monthFilter.value || getCurrentMonth();
+      const previousMonth = shiftMonth(month, -1);
+      const previousClosing = calculateMonthClosingBalance(previousMonth);
+      const rows = [
+        { title: "Прошлый месяц", meta: previousMonth + " · итог: " + formatMoney(previousClosing) },
+        { title: "Текущий месяц", meta: month + " · начало: " + formatMoney(totals.openingBalance) + " · итог: " + formatMoney(totals.balance) }
+      ];
+      rows.forEach(function (row) {
+        const item = document.createElement("div");
+        item.className = "list-row";
+        const text = document.createElement("div");
+        const title = document.createElement("div");
+        title.className = "list-title";
+        title.textContent = row.title;
+        const meta = document.createElement("div");
+        meta.className = "list-meta";
+        meta.textContent = row.meta;
+        text.append(title, meta);
+        item.appendChild(text);
+        elements.openingBalancesList.appendChild(item);
+      });
+    }
+
+    function saveCredit() {
+      const credit = {
+        id: editingCreditId || createId(),
+        name: cleanText(elements.creditNameInput.value),
+        payment: safeNumber(elements.creditPaymentInput.value, 0),
+        balance: safeNumber(elements.creditBalanceInput.value, 0),
+        dueDay: Math.min(Math.max(Math.round(safeNumber(elements.creditDueDayInput.value, 1)), 1), 31),
+        active: elements.creditActiveSelect.value !== "inactive",
+        createdAt: new Date().toISOString()
+      };
+      if (!isValidCreditLike(credit)) {
+        alert("Проверьте название кредита и ежемесячный платёж.");
+        return;
+      }
+      if (editingCreditId) {
+        const index = state.credits.findIndex(function (item) { return item.id === editingCreditId; });
+        if (index !== -1) state.credits[index] = { ...state.credits[index], ...credit };
+      } else {
+        state.credits.push(credit);
+      }
+      cancelCreditEditing(false);
+      saveState();
+      render();
+    }
+
+    function startEditCredit(id) {
+      const credit = state.credits.find(function (item) { return item.id === id; });
+      if (!credit) return;
+      editingCreditId = credit.id;
+      elements.creditNameInput.value = credit.name;
+      elements.creditPaymentInput.value = credit.payment;
+      elements.creditBalanceInput.value = credit.balance || "";
+      elements.creditDueDayInput.value = credit.dueDay || 1;
+      elements.creditActiveSelect.value = credit.active === false ? "inactive" : "active";
+      elements.saveCreditBtn.textContent = "Сохранить";
+      elements.cancelCreditEditBtn.classList.remove("hidden");
+      setActiveTab("credits");
+    }
+
+    function cancelCreditEditing(shouldRender = true) {
+      editingCreditId = null;
+      elements.creditNameInput.value = "";
+      elements.creditPaymentInput.value = "";
+      elements.creditBalanceInput.value = "";
+      elements.creditDueDayInput.value = "";
+      elements.creditActiveSelect.value = "active";
+      elements.saveCreditBtn.textContent = "Сохранить кредит";
+      elements.cancelCreditEditBtn.classList.add("hidden");
+      if (shouldRender) render();
+    }
+
+    function deleteCredit(id) {
+      const credit = state.credits.find(function (item) { return item.id === id; });
+      if (!credit) return;
+      const ok = confirm("Удалить кредитное обязательство?\n\n" + credit.name + " — " + formatMoney(credit.payment) + " в месяц");
+      if (!ok) return;
+      state.credits = state.credits.filter(function (item) { return item.id !== id; });
+      if (editingCreditId === id) cancelCreditEditing(false);
+      saveState();
+      render();
+    }
+
+    function renderCreditsEditor() {
+      clearNode(elements.creditsList);
+      if (!Array.isArray(state.credits) || state.credits.length === 0) {
+        elements.creditsList.appendChild(makeEmptyBox("Кредиты и обязательные платежи пока не заданы."));
+        return;
+      }
+      state.credits.slice().sort(function (a, b) { return (a.dueDay || 99) - (b.dueDay || 99); }).forEach(function (credit) {
+        const item = document.createElement("div");
+        item.className = "list-row";
+        const text = document.createElement("div");
+        const title = document.createElement("div");
+        title.className = "list-title";
+        title.textContent = credit.name;
+        const meta = document.createElement("div");
+        meta.className = "list-meta";
+        meta.textContent = formatMoney(credit.payment) + " в месяц · день " + (credit.dueDay || 1) + " · " + (credit.active === false ? "не учитывается" : "учитывается");
+        text.append(title, meta);
+        const actionWrap = document.createElement("div");
+        actionWrap.className = "row-actions";
+        const editBtn = document.createElement("button");
+        editBtn.className = "btn-ghost small-btn";
+        editBtn.type = "button";
+        editBtn.textContent = "Изм.";
+        editBtn.addEventListener("click", function () { startEditCredit(credit.id); });
+        const delBtn = document.createElement("button");
+        delBtn.className = "btn-danger small-btn";
+        delBtn.type = "button";
+        delBtn.textContent = "Удалить";
+        delBtn.addEventListener("click", function () { deleteCredit(credit.id); });
+        actionWrap.append(editBtn, delBtn);
+        item.append(text, actionWrap);
+        elements.creditsList.appendChild(item);
+      });
+    }
+
+    function renderCreditsTable(totals) {
+      clearNode(elements.creditsTableBody);
+      const activeCredits = getActiveCredits();
+      const hasCredits = activeCredits.length > 0;
+      elements.creditsTableBody.closest(".table-wrap").classList.toggle("hidden", !hasCredits);
+      elements.creditsEmpty.classList.toggle("hidden", hasCredits);
+      if (!hasCredits) return;
+      const today = new Date();
+      const selectedMonth = elements.monthFilter.value || getCurrentMonth();
+      const currentMonth = getCurrentMonth();
+      activeCredits.slice().sort(function (a, b) { return (a.dueDay || 99) - (b.dueDay || 99); }).forEach(function (credit) {
+        const row = document.createElement("tr");
+        appendCell(row, credit.name);
+        appendCell(row, formatMoney(credit.payment));
+        appendCell(row, String(credit.dueDay || 1));
+        const statusCell = document.createElement("td");
+        const status = document.createElement("span");
+        const dueDay = Number(credit.dueDay || 1);
+        const isSoon = selectedMonth === currentMonth && dueDay >= today.getDate() && dueDay - today.getDate() <= 5;
+        status.className = "limit-status " + (isSoon ? "status-warn" : "status-ok");
+        status.textContent = isSoon ? "Скоро" : "Учтён";
+        statusCell.appendChild(status);
+        row.appendChild(statusCell);
+        elements.creditsTableBody.appendChild(row);
+      });
+    }
+
+    function renderLimitsTable(operations) {
+      clearNode(elements.limitsTableBody);
+      const entries = Object.entries(state.limits).filter(function ([, limit]) { return Number(limit) > 0; });
+      const hasLimits = entries.length > 0;
+      elements.limitsTableBody.closest(".table-wrap").classList.toggle("hidden", !hasLimits);
+      elements.limitsEmpty.classList.toggle("hidden", hasLimits);
+      if (!hasLimits) return;
+
+      const expensesByCategory = groupByCategory(operations.filter(function (op) { return op.type === "expense"; }));
+      const expenseMap = new Map(expensesByCategory.map(function (item) { return [item.category, item.amount]; }));
+
+      entries.sort(function (a, b) { return a[0].localeCompare(b[0], "ru"); });
+      entries.forEach(function ([category, limit]) {
+        const spent = expenseMap.get(category) || 0;
+        const percent = limit > 0 ? (spent / limit) * 100 : 0;
+        const row = document.createElement("tr");
+        appendCell(row, category);
+        appendCell(row, formatMoney(spent));
+        appendCell(row, formatMoney(limit));
+
+        const statusCell = document.createElement("td");
+        const status = document.createElement("span");
+        status.className = "limit-status " + (percent >= 100 ? "status-bad" : percent >= 80 ? "status-warn" : "status-ok");
+        status.textContent = percent >= 100 ? "Превышен" : percent >= 80 ? "Близко" : "ОК";
+        statusCell.appendChild(status);
+        row.appendChild(statusCell);
+        elements.limitsTableBody.appendChild(row);
+      });
+    }
+
+    function renderAnalytics(operations, totals) {
+      const expenses = operations.filter(function (op) { return op.type === "expense"; });
+      const groupedExpenses = groupByCategory(expenses);
+      const topExpense = expenses.reduce(function (max, op) { return Number(op.amount) > Number(max.amount || 0) ? op : max; }, {});
+      elements.operationsCount.textContent = String(operations.length);
+      elements.topExpenseValue.textContent = topExpense.amount ? formatMoney(topExpense.amount) : formatMoney(0);
+      elements.limitsUsageValue.textContent = calculateTotalLimitUsage(operations);
+      elements.monthlyFlowValue.textContent = formatMoney(totals.monthlyBalance);
+      elements.monthlyFlowValue.classList.toggle("positive", totals.monthlyBalance >= 0);
+      elements.monthlyFlowValue.classList.toggle("negative", totals.monthlyBalance < 0);
+
+      clearNode(elements.monthAnalytics);
+      if (operations.length === 0) {
+        elements.monthAnalytics.appendChild(makeEmptyBox("Добавьте операции — появится аналитика месяца."));
+        return;
+      }
+
+      const ratioItems = [
+        { label: "Доходы месяца", value: totals.income, total: Math.max(totals.income, totals.expense + totals.creditPayments), kind: "income" },
+        { label: "Расходы месяца", value: totals.expense, total: Math.max(totals.income, totals.expense + totals.creditPayments), kind: "expense" },
+        { label: "Кредитные платежи месяца", value: totals.creditPayments, total: Math.max(totals.income, totals.expense + totals.creditPayments), kind: "expense" }
+      ];
+      ratioItems.forEach(function (item) {
+        elements.monthAnalytics.appendChild(makeBarCard(item.label, item.value, item.total, item.kind));
+      });
+
+      if (groupedExpenses.length > 0) {
+        const biggest = groupedExpenses[0];
+        const text = document.createElement("div");
+        text.className = "notice";
+        text.textContent = "Самая крупная категория расходов: «" + biggest.category + "» — " + formatMoney(biggest.amount) + ".";
+        elements.monthAnalytics.appendChild(text);
+      }
+    }
+
+    function renderBreakdown(operations, type, container) {
+      clearNode(container);
+      const list = operations.filter(function (op) { return op.type === type; });
+      const total = list.reduce(function (sum, op) { return sum + Number(op.amount); }, 0);
+      if (list.length === 0 || total <= 0) {
+        container.appendChild(makeEmptyBox("Данных пока нет."));
+        return;
+      }
+      groupByCategory(list).forEach(function (item) {
+        container.appendChild(makeBarCard(item.category, item.amount, total, type));
+      });
+    }
+
+    function renderTips(operations, totals) {
+      clearNode(elements.tipsList);
+      const tips = [];
+      const target = safeNumber(state.settings.savingTarget, 10);
+
+      if (operations.length === 0 && totals.openingBalance === 0 && totals.creditPayments === 0) tips.push({ kind: "warn", text: "Добавьте первые доходы, расходы, начальный остаток или кредиты, чтобы увидеть полноценный анализ." });
+      if (totals.income > 0 && (totals.expense + totals.creditPayments) > totals.income) tips.push({ kind: "bad", text: "Расходы вместе с кредитными платежами выше доходов. Остаток за месяц отрицательный." });
+      if (totals.balance < 0) tips.push({ kind: "bad", text: "Остаток на конец месяца отрицательный. Проверьте расходы, кредиты и начальный остаток." });
+      if (totals.income > 0 && totals.monthlyBalance >= 0 && totals.savingRate >= target) tips.push({ kind: "good", text: "Цель по доле накоплений выполнена или превышена. Бюджет выглядит устойчиво." });
+      if (totals.income > 0 && totals.monthlyBalance >= 0 && totals.savingRate < target) tips.push({ kind: "warn", text: "Остаток за месяц положительный, но цель по доле накоплений пока не достигнута." });
+      if (totals.income > 0 && totals.creditPayments / totals.income >= 0.35) tips.push({ kind: "warn", text: "Кредитные платежи занимают " + formatPercent((totals.creditPayments / totals.income) * 100) + " доходов месяца. Это высокая долговая нагрузка." });
+
+      const limitAlerts = getLimitAlerts(operations);
+      limitAlerts.forEach(function (alert) {
+        tips.push({ kind: alert.percent >= 100 ? "bad" : "warn", text: alert.text });
+      });
+
+      const groupedExpenses = groupByCategory(operations.filter(function (op) { return op.type === "expense"; }));
+      if (groupedExpenses.length > 0 && totals.expense > 0) {
+        const top = groupedExpenses[0];
+        const percent = (top.amount / totals.expense) * 100;
+        if (percent >= 40) tips.push({ kind: "warn", text: "Категория «" + top.category + "» занимает " + formatPercent(percent) + " всех расходов." });
+      }
+
+      if (tips.length === 0) tips.push({ kind: "good", text: "Критичных проблем не найдено. Продолжайте регулярно вносить операции." });
+
+      tips.forEach(function (tip) {
+        const div = document.createElement("div");
+        div.className = "tip " + tip.kind;
+        div.textContent = tip.text;
+        elements.tipsList.appendChild(div);
+      });
+    }
+
+    function exportExcel() {
+      const XLSXLib = getExcelLibrary();
+      if (!XLSXLib) return;
+
+      const wb = XLSXLib.utils.book_new();
+
+      const operationRows = state.operations.map(function (op) {
+        return {
+          "Дата": op.date,
+          "Тип": op.type === "income" ? "Доход" : "Расход",
+          "Категория": op.category,
+          "Описание": op.description,
+          "Сумма": Number(op.amount),
+          "ID": op.id,
+          "Создано": op.createdAt || ""
+        };
+      });
+      if (operationRows.length === 0) {
+        operationRows.push({ "Дата": "", "Тип": "", "Категория": "", "Описание": "", "Сумма": "", "ID": "", "Создано": "" });
+      }
+      const wsOperations = XLSXLib.utils.json_to_sheet(operationRows);
+      wsOperations["!cols"] = [{ wch: 12 }, { wch: 10 }, { wch: 24 }, { wch: 38 }, { wch: 14 }, { wch: 34 }, { wch: 24 }];
+      XLSXLib.utils.book_append_sheet(wb, wsOperations, "Операции");
+
+      const settingsRows = [
+        { "Параметр": "Валюта", "Значение": state.settings.currency || "₽" },
+        { "Параметр": "Цель по накоплениям, %", "Значение": safeNumber(state.settings.savingTarget, 10) },
+        { "Параметр": "Тема", "Значение": state.settings.theme || "dark" },
+        { "Параметр": "Месяц расчёта", "Значение": elements.monthFilter.value || getCurrentMonth() },
+        { "Параметр": "Режим отображения кредитов", "Значение": state.settings.creditSummaryMode === "debt" ? "Остаток долга" : "Платёж месяца" },
+        { "Параметр": "Режим отображения остатка", "Значение": state.settings.balanceSummaryMode === "period" ? "За месяц" : "На конец месяца" }
+      ];
+      const wsSettings = XLSXLib.utils.json_to_sheet(settingsRows);
+      wsSettings["!cols"] = [{ wch: 26 }, { wch: 22 }];
+      XLSXLib.utils.book_append_sheet(wb, wsSettings, "Настройки");
+
+      const categoryRows = [];
+      ["income", "expense"].forEach(function (type) {
+        defaultCategories[type].forEach(function (category) {
+          categoryRows.push({ "Тип": type === "income" ? "Доход" : "Расход", "Категория": category, "Источник": "Стандартная" });
+        });
+        (state.userCategories[type] || []).forEach(function (category) {
+          categoryRows.push({ "Тип": type === "income" ? "Доход" : "Расход", "Категория": category, "Источник": "Пользовательская" });
+        });
+      });
+      const wsCategories = XLSXLib.utils.json_to_sheet(categoryRows);
+      wsCategories["!cols"] = [{ wch: 12 }, { wch: 28 }, { wch: 20 }];
+      XLSXLib.utils.book_append_sheet(wb, wsCategories, "Категории");
+
+      const limitRows = Object.entries(state.limits).map(function ([category, limit]) {
+        return { "Категория": category, "Лимит на месяц": Number(limit) };
+      });
+      if (limitRows.length === 0) limitRows.push({ "Категория": "", "Лимит на месяц": "" });
+      const wsLimits = XLSXLib.utils.json_to_sheet(limitRows);
+      wsLimits["!cols"] = [{ wch: 28 }, { wch: 18 }];
+      XLSXLib.utils.book_append_sheet(wb, wsLimits, "Лимиты");
+
+      const openingRows = Object.entries(state.openingBalances || {}).sort().map(function ([month, amount]) {
+        return { "Месяц": month, "Остаток на начало месяца": Number(amount) };
+      });
+      if (openingRows.length === 0) openingRows.push({ "Месяц": "", "Остаток на начало месяца": "" });
+      const wsOpening = XLSXLib.utils.json_to_sheet(openingRows);
+      wsOpening["!cols"] = [{ wch: 14 }, { wch: 28 }];
+      XLSXLib.utils.book_append_sheet(wb, wsOpening, "Остатки");
+
+      const creditRows = (state.credits || []).map(function (credit) {
+        return {
+          "Название": credit.name,
+          "Платёж в месяц": Number(credit.payment),
+          "Остаток долга": Number(credit.balance || 0),
+          "День платежа": Number(credit.dueDay || 1),
+          "Активен": credit.active === false ? "Нет" : "Да",
+          "ID": credit.id,
+          "Создано": credit.createdAt || ""
+        };
+      });
+      if (creditRows.length === 0) creditRows.push({ "Название": "", "Платёж в месяц": "", "Остаток долга": "", "День платежа": "", "Активен": "", "ID": "", "Создано": "" });
+      const wsCredits = XLSXLib.utils.json_to_sheet(creditRows);
+      wsCredits["!cols"] = [{ wch: 28 }, { wch: 18 }, { wch: 18 }, { wch: 15 }, { wch: 12 }, { wch: 34 }, { wch: 24 }];
+      XLSXLib.utils.book_append_sheet(wb, wsCredits, "Кредиты");
+
+      const fileName = "Семейный_бюджет_" + (elements.monthFilter.value || "все") + "_" + getTodayDate() + ".xlsx";
+      XLSXLib.writeFile(wb, fileName);
+    }
+
+    function importExcel(event) {
+      const XLSXLib = getExcelLibrary();
+      if (!XLSXLib) {
+        elements.excelFileInput.value = "";
+        return;
+      }
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function (loadEvent) {
+        try {
+          const data = new Uint8Array(loadEvent.target.result);
+          const wb = XLSXLib.read(data, { type: "array", cellDates: true });
+          const parsed = parseWorkbook(wb, XLSXLib);
+
+          const importedCount = parsed.operations.length;
+          const replace = importedCount > 0
+            ? confirm("Импорт Excel найденных операций: " + importedCount + ".\n\nОК — заменить текущие операции.\nОтмена — добавить к текущим.")
+            : false;
+
+          if (importedCount > 0) {
+            if (replace) {
+              state.operations = ensureUniqueOperationIds(parsed.operations);
+            } else {
+              const appended = parsed.operations.map(function (op) { return { ...op, id: createId() }; });
+              state.operations = ensureUniqueOperationIds(state.operations.concat(appended));
+            }
+          }
+
+          state.userCategories.income = uniqueStrings(state.userCategories.income.concat(parsed.userCategories.income));
+          state.userCategories.expense = uniqueStrings(state.userCategories.expense.concat(parsed.userCategories.expense));
+          state.limits = { ...state.limits, ...parsed.limits };
+          state.openingBalances = { ...state.openingBalances, ...parsed.openingBalances };
+          state.credits = ensureUniqueCreditIds((state.credits || []).concat(parsed.credits || []));
+          state.settings = { ...state.settings, ...parsed.settings };
+
+          elements.currencySelect.value = state.settings.currency || "₽";
+          elements.savingTarget.value = safeNumber(state.settings.savingTarget, 10);
+          elements.monthFilter.value = normalizeMonth(state.settings.month) || elements.monthFilter.value;
+          elements.creditSummaryMode.value = state.settings.creditSummaryMode === "debt" ? "debt" : "payment";
+          elements.balanceSummaryMode.value = state.settings.balanceSummaryMode === "period" ? "period" : "total";
+          applyTheme(state.settings.theme || "dark");
+
+          saveState();
+          refreshAllCategorySelects();
+          render();
+          alert("Импорт Excel завершён. Операций: " + importedCount + ".");
+        } catch (error) {
+          console.error(error);
+          alert("Не удалось импортировать Excel-файл. Проверьте, что это .xlsx/.xls/.csv с листами Операции, Настройки, Категории, Лимиты, Остатки, Кредиты.");
+        } finally {
+          elements.excelFileInput.value = "";
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    function parseWorkbook(wb, XLSXLib) {
+      const result = {
+        operations: [],
+        settings: {},
+        userCategories: { income: [], expense: [] },
+        limits: {},
+        openingBalances: {},
+        credits: []
+      };
+
+      const operationsSheet = getSheetByNames(wb, ["Операции", "Operations", "Transactions"]) || wb.Sheets[wb.SheetNames[0]];
+      const operationRows = XLSXLib.utils.sheet_to_json(operationsSheet, { defval: "", raw: true });
+      result.operations = operationRows.map(function (row) { return normalizeExcelOperation(row, XLSXLib); }).filter(Boolean);
+
+      const settingsSheet = getSheetByNames(wb, ["Настройки", "Settings"]);
+      if (settingsSheet) {
+        XLSXLib.utils.sheet_to_json(settingsSheet, { defval: "", raw: true }).forEach(function (row) {
+          const key = cleanText(pick(row, ["Параметр", "parameter", "Parameter", "Настройка"])).toLowerCase();
+          const value = pick(row, ["Значение", "value", "Value"]);
+          if (key.includes("валют")) result.settings.currency = cleanText(value) || "₽";
+          if (key.includes("цель")) result.settings.savingTarget = safeNumber(value, 10);
+          if (key.includes("тем")) result.settings.theme = cleanText(value).toLowerCase() === "light" ? "light" : "dark";
+          if (key.includes("месяц")) result.settings.month = normalizeMonth(value);
+          if (key.includes("кредит") && key.includes("режим")) {
+            const normalized = cleanText(value).toLowerCase();
+            result.settings.creditSummaryMode = normalized.includes("задолж") || normalized.includes("долг") || normalized === "debt" ? "debt" : "payment";
+          }
+          if (key.includes("остат") && key.includes("режим")) {
+            const normalized = cleanText(value).toLowerCase();
+            result.settings.balanceSummaryMode = normalized.includes("период") || normalized.includes("за месяц") || normalized === "period" ? "period" : "total";
+          }
+        });
+      }
+
+      const categoriesSheet = getSheetByNames(wb, ["Категории", "Categories"]);
+      if (categoriesSheet) {
+        XLSXLib.utils.sheet_to_json(categoriesSheet, { defval: "", raw: true }).forEach(function (row) {
+          const type = normalizeType(pick(row, ["Тип", "type", "Type"]));
+          const category = cleanText(pick(row, ["Категория", "category", "Category"]));
+          const source = cleanText(pick(row, ["Источник", "source", "Source"])).toLowerCase();
+          if (!type || !category) return;
+          const isDefault = defaultCategories[type].some(function (item) { return item.toLowerCase() === category.toLowerCase(); });
+          if (!isDefault || source.includes("польз")) result.userCategories[type].push(category);
+        });
+      }
+
+      const limitsSheet = getSheetByNames(wb, ["Лимиты", "Limits"]);
+      if (limitsSheet) {
+        XLSXLib.utils.sheet_to_json(limitsSheet, { defval: "", raw: true }).forEach(function (row) {
+          const category = cleanText(pick(row, ["Категория", "category", "Category"]));
+          const limit = safeNumber(pick(row, ["Лимит на месяц", "Лимит", "limit", "Limit"]), 0);
+          if (category && limit > 0) result.limits[category] = limit;
+        });
+      }
+
+      const openingSheet = getSheetByNames(wb, ["Остатки", "Переходящие остатки", "Balances", "Carryover"]);
+      if (openingSheet) {
+        XLSXLib.utils.sheet_to_json(openingSheet, { defval: "", raw: true }).forEach(function (row) {
+          const month = normalizeMonth(pick(row, ["Месяц", "month", "Month", "Период"]));
+          const amount = safeNumber(pick(row, ["Остаток на начало месяца", "Остаток", "Начальный остаток", "Balance", "Opening balance"]), 0);
+          if (month) result.openingBalances[month] = amount;
+        });
+      }
+
+      const creditsSheet = getSheetByNames(wb, ["Кредиты", "Кредитные обязательства", "Credits", "Loans"]);
+      if (creditsSheet) {
+        result.credits = XLSXLib.utils.sheet_to_json(creditsSheet, { defval: "", raw: true })
+          .map(normalizeExcelCredit)
+          .filter(Boolean);
+      }
+
+      result.userCategories.income = uniqueStrings(result.userCategories.income);
+      result.userCategories.expense = uniqueStrings(result.userCategories.expense);
+      return result;
+    }
+
+    function normalizeExcelOperation(row, XLSXLib) {
+      const type = normalizeType(pick(row, ["Тип", "type", "Type"]));
+      const category = cleanText(pick(row, ["Категория", "category", "Category"]));
+      const description = cleanText(pick(row, ["Описание", "description", "Description", "Комментарий"])) || "Без описания";
+      const amount = safeNumber(pick(row, ["Сумма", "amount", "Amount"]), 0);
+      const date = normalizeDateValue(pick(row, ["Дата", "date", "Date"]), XLSXLib);
+      const id = cleanText(pick(row, ["ID", "id", "Id"])) || createId();
+      const createdAt = cleanText(pick(row, ["Создано", "createdAt", "CreatedAt"])) || new Date().toISOString();
+
+      const op = { id, type, category, description, amount, date, createdAt };
+      return isValidOperationLike(op) ? op : null;
+    }
+
+    function normalizeExcelCredit(row) {
+      const name = cleanText(pick(row, ["Название", "Кредит", "name", "Name", "Credit"]));
+      const payment = safeNumber(pick(row, ["Платёж в месяц", "Платеж в месяц", "Платёж", "Платеж", "payment", "Payment"]), 0);
+      const balance = safeNumber(pick(row, ["Остаток долга", "Долг", "balance", "Balance"]), 0);
+      const dueDay = Math.min(Math.max(Math.round(safeNumber(pick(row, ["День платежа", "День", "dueDay", "Due day"]), 1)), 1), 31);
+      const activeRaw = cleanText(pick(row, ["Активен", "active", "Active", "Статус"])).toLowerCase();
+      const active = !(activeRaw.includes("нет") || activeRaw.includes("не") || activeRaw === "false" || activeRaw === "0");
+      const id = cleanText(pick(row, ["ID", "id", "Id"])) || createId();
+      const createdAt = cleanText(pick(row, ["Создано", "createdAt", "CreatedAt"])) || new Date().toISOString();
+      const credit = { id, name, payment, balance, dueDay, active, createdAt };
+      return isValidCreditLike(credit) ? credit : null;
+    }
+
+    function getExcelLibrary() {
+      if (typeof XLSX === "undefined") {
+        alert("Модуль Excel не загрузился. Подключите интернет и обновите страницу. Остальная часть калькулятора работает без интернета.");
+        return null;
+      }
+      return XLSX;
+    }
+
+    function clearOperations() {
+      const ok = confirm("Удалить все операции? Настройки, категории, лимиты, остатки и кредиты останутся.");
+      if (!ok) return;
+      state.operations = [];
+      cancelEditing(false);
+      saveState();
+      render();
+    }
+
+    function resetAllData() {
+      const ok = confirm("Сбросить всё: операции, пользовательские категории, лимиты, остатки, кредиты и настройки?\n\nПеред сбросом лучше сделать экспорт Excel.");
+      if (!ok) return;
+      state = {
+        operations: [],
+        settings: { currency: "₽", savingTarget: 10, theme: "dark", month: getCurrentMonth(), creditSummaryMode: "payment", balanceSummaryMode: "total" },
+        userCategories: { income: [], expense: [] },
+        limits: {},
+        openingBalances: {},
+        credits: []
+      };
+      elements.monthFilter.value = state.settings.month;
+      elements.currencySelect.value = state.settings.currency;
+      elements.savingTarget.value = state.settings.savingTarget;
+      elements.creditSummaryMode.value = state.settings.creditSummaryMode;
+      elements.balanceSummaryMode.value = state.settings.balanceSummaryMode;
+      applyTheme(state.settings.theme);
+      cancelEditing(false);
+      cancelCreditEditing(false);
+      preloadOpeningBalance();
+      refreshAllCategorySelects();
+      saveState();
+      render();
+    }
+
+    function refreshAllCategorySelects() {
+      fillCategorySelect(elements.operationCategory, elements.operationType.value || "income");
+      fillAllCategoryFilter();
+      fillLimitCategorySelect();
+    }
+
+    function fillCategorySelect(select, type) {
+      clearNode(select);
+      getAllCategories(type).forEach(function (category) {
+        select.appendChild(makeOption(category, category));
+      });
+    }
+
+    function fillAllCategoryFilter() {
+      const oldValue = elements.categoryFilter.value;
+      clearNode(elements.categoryFilter);
+      elements.categoryFilter.appendChild(makeOption("all", "Все категории"));
+      const all = uniqueStrings(getAllCategories("income").concat(getAllCategories("expense")));
+      all.sort(function (a, b) { return a.localeCompare(b, "ru"); });
+      all.forEach(function (category) { elements.categoryFilter.appendChild(makeOption(category, category)); });
+      if (Array.from(elements.categoryFilter.options).some(function (option) { return option.value === oldValue; })) {
+        elements.categoryFilter.value = oldValue;
+      }
+    }
+
+    function fillLimitCategorySelect() {
+      const oldValue = elements.limitCategorySelect.value;
+      clearNode(elements.limitCategorySelect);
+      getAllCategories("expense").forEach(function (category) {
+        elements.limitCategorySelect.appendChild(makeOption(category, category));
+      });
+      if (Array.from(elements.limitCategorySelect.options).some(function (option) { return option.value === oldValue; })) {
+        elements.limitCategorySelect.value = oldValue;
+      }
+      preloadLimitAmount();
+    }
+
+    function getAllCategories(type) {
+      return uniqueStrings((defaultCategories[type] || []).concat(state.userCategories[type] || []));
+    }
+
+    function groupByCategory(operations) {
+      const map = new Map();
+      operations.forEach(function (operation) {
+        map.set(operation.category, (map.get(operation.category) || 0) + Number(operation.amount));
+      });
+      return Array.from(map.entries()).map(function ([category, amount]) {
+        return { category, amount };
+      }).sort(function (a, b) { return b.amount - a.amount; });
+    }
+
+    function makeBarCard(label, amount, total, kind) {
+      const percent = total > 0 ? Math.min((amount / total) * 100, 100) : 0;
+      const card = document.createElement("div");
+      card.className = "bar-card";
+      const head = document.createElement("div");
+      head.className = "bar-head";
+      const left = document.createElement("span");
+      left.textContent = label;
+      const right = document.createElement("span");
+      right.textContent = formatMoney(amount) + " · " + formatPercent(total > 0 ? (amount / total) * 100 : 0);
+      head.append(left, right);
+      const track = document.createElement("div");
+      track.className = "bar-track";
+      const fill = document.createElement("div");
+      fill.className = "bar-fill " + (kind === "expense" ? "expense" : kind === "income" ? "income" : "");
+      fill.style.width = percent + "%";
+      track.appendChild(fill);
+      card.append(head, track);
+      return card;
+    }
+
+    function getOpeningBalance(month) {
+      if (!state.openingBalances) state.openingBalances = {};
+      return safeNumber(state.openingBalances[month], 0);
+    }
+
+    function getActiveCredits() {
+      return (state.credits || []).filter(function (credit) {
+        return credit && credit.active !== false && safeNumber(credit.payment, 0) > 0;
+      });
+    }
+
+    function getMonthlyCreditPayments(month) {
+      return getActiveCredits().reduce(function (sum, credit) {
+        return sum + safeNumber(credit.payment, 0);
+      }, 0);
+    }
+
+    function getTotalCreditDebt() {
+      return getActiveCredits().reduce(function (sum, credit) {
+        return sum + safeNumber(credit.balance, 0);
+      }, 0);
+    }
+
+    function calculateMonthClosingBalance(month) {
+      const monthOperations = state.operations.filter(function (operation) {
+        return operation.date && operation.date.startsWith(month);
+      });
+      const income = monthOperations.filter(function (op) { return op.type === "income"; }).reduce(function (sum, op) { return sum + Number(op.amount); }, 0);
+      const expense = monthOperations.filter(function (op) { return op.type === "expense"; }).reduce(function (sum, op) { return sum + Number(op.amount); }, 0);
+      return getOpeningBalance(month) + income - expense - getMonthlyCreditPayments(month);
+    }
+
+    function shiftMonth(month, diff) {
+      const normalized = normalizeMonth(month) || getCurrentMonth();
+      const date = new Date(normalized + "-01T00:00:00");
+      date.setMonth(date.getMonth() + diff);
+      return date.getFullYear() + "-" + String(date.getMonth() + 1).padStart(2, "0");
+    }
+
+    function getLimitAlerts(operations) {
+      const expenses = groupByCategory(operations.filter(function (op) { return op.type === "expense"; }));
+      const expenseMap = new Map(expenses.map(function (item) { return [item.category, item.amount]; }));
+      return Object.entries(state.limits).map(function ([category, limit]) {
+        const spent = expenseMap.get(category) || 0;
+        const percent = Number(limit) > 0 ? (spent / Number(limit)) * 100 : 0;
+        return {
+          category, percent,
+          text: percent >= 100
+            ? "Лимит по категории «" + category + "» превышен: " + formatPercent(percent) + "."
+            : "Категория «" + category + "» близка к лимиту: " + formatPercent(percent) + "."
+        };
+      }).filter(function (item) { return item.percent >= 80; });
+    }
+
+    function calculateTotalLimitUsage(operations) {
+      const entries = Object.entries(state.limits).filter(function ([, limit]) { return Number(limit) > 0; });
+      if (entries.length === 0) return "0%";
+      const expenseMap = new Map(groupByCategory(operations.filter(function (op) { return op.type === "expense"; })).map(function (item) { return [item.category, item.amount]; }));
+      const totalLimit = entries.reduce(function (sum, [, limit]) { return sum + Number(limit); }, 0);
+      const totalSpent = entries.reduce(function (sum, [category]) { return sum + (expenseMap.get(category) || 0); }, 0);
+      return formatPercent(totalLimit > 0 ? (totalSpent / totalLimit) * 100 : 0);
+    }
+
+    function appendCell(row, text) {
+      const cell = document.createElement("td");
+      cell.textContent = String(text ?? "");
+      row.appendChild(cell);
+      return cell;
+    }
+
+    function makeButton(text, className, dataset) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = className;
+      button.textContent = text;
+      Object.entries(dataset || {}).forEach(function ([key, value]) { button.dataset[key] = String(value); });
+      return button;
+    }
+
+    function makeOption(value, text) {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = text;
+      return option;
+    }
+
+    function makeEmptyBox(text) {
+      const box = document.createElement("div");
+      box.className = "empty-box";
+      box.textContent = text;
+      return box;
+    }
+
+    function clearNode(node) {
+      while (node.firstChild) node.removeChild(node.firstChild);
+    }
+
+    function cleanText(value) {
+      return String(value ?? "").replace(/\s+/g, " ").trim();
+    }
+
+    function safeNumber(value, fallback) {
+      if (typeof value === "number") return Number.isFinite(value) ? value : fallback;
+      const cleaned = String(value ?? "")
+        .replace(/\s/g, "")
+        .replace(/,/g, ".")
+        .replace(/[^0-9.\-]/g, "");
+      const number = Number(cleaned);
+      return Number.isFinite(number) ? number : fallback;
+    }
+
+    function normalizeStringArray(value) {
+      return uniqueStrings(Array.isArray(value) ? value.map(cleanText).filter(Boolean) : []);
+    }
+
+    function uniqueStrings(arr) {
+      const result = [];
+      const seen = new Set();
+      arr.forEach(function (item) {
+        const text = cleanText(item);
+        const key = text.toLowerCase();
+        if (text && !seen.has(key)) {
+          seen.add(key);
+          result.push(text);
+        }
+      });
+      return result;
+    }
+
+    function normalizeLimits(value) {
+      const limits = {};
+      if (!value || typeof value !== "object") return limits;
+      Object.entries(value).forEach(function ([category, amount]) {
+        const cleanedCategory = cleanText(category);
+        const cleanedAmount = safeNumber(amount, 0);
+        if (cleanedCategory && cleanedAmount > 0) limits[cleanedCategory] = cleanedAmount;
+      });
+      return limits;
+    }
+
+    function normalizeOpeningBalances(value) {
+      const balances = {};
+      if (!value || typeof value !== "object") return balances;
+      Object.entries(value).forEach(function ([month, amount]) {
+        const normalizedMonth = normalizeMonth(month);
+        if (normalizedMonth) balances[normalizedMonth] = safeNumber(amount, 0);
+      });
+      return balances;
+    }
+
+    function normalizeCreditObject(credit) {
+      return {
+        id: cleanText(credit.id) || createId(),
+        name: cleanText(credit.name || credit.title),
+        payment: safeNumber(credit.payment || credit.monthlyPayment, 0),
+        balance: safeNumber(credit.balance || credit.debtBalance, 0),
+        dueDay: Math.min(Math.max(Math.round(safeNumber(credit.dueDay, 1)), 1), 31),
+        active: credit.active === false ? false : true,
+        createdAt: cleanText(credit.createdAt) || new Date().toISOString()
+      };
+    }
+
+    function isValidCreditLike(credit) {
+      return Boolean(credit && cleanText(credit.name || credit.title) && safeNumber(credit.payment || credit.monthlyPayment, 0) > 0);
+    }
+
+    function ensureUniqueCreditIds(credits) {
+      const seen = new Set();
+      return (credits || []).map(function (credit) {
+        const normalized = normalizeCreditObject(credit);
+        let id = cleanText(normalized.id) || createId();
+        if (seen.has(id)) id = createId();
+        seen.add(id);
+        return { ...normalized, id };
+      });
+    }
+
+    function normalizeOperationObject(op) {
+      return {
+        id: cleanText(op.id) || createId(),
+        type: normalizeType(op.type),
+        category: cleanText(op.category),
+        description: cleanText(op.description) || "Без описания",
+        amount: safeNumber(op.amount, 0),
+        date: normalizeDateValue(op.date),
+        createdAt: cleanText(op.createdAt) || new Date().toISOString()
+      };
+    }
+
+    function isValidOperationLike(op) {
+      return Boolean(
+        op &&
+        (op.type === "income" || op.type === "expense" || normalizeType(op.type)) &&
+        cleanText(op.category) &&
+        safeNumber(op.amount, 0) > 0 &&
+        normalizeDateValue(op.date)
+      );
+    }
+
+    function ensureUniqueOperationIds(operations) {
+      const seen = new Set();
+      return operations.map(function (op) {
+        let id = cleanText(op.id) || createId();
+        if (seen.has(id)) id = createId();
+        seen.add(id);
+        return { ...op, id };
+      });
+    }
+
+    function normalizeType(value) {
+      const text = cleanText(value).toLowerCase();
+      if (["income", "доход", "поступление", "+"].includes(text)) return "income";
+      if (["expense", "расход", "трата", "-", "−"].includes(text)) return "expense";
+      return "";
+    }
+
+    function normalizeMonth(value) {
+      const text = cleanText(value);
+      if (/^\d{4}-\d{2}$/.test(text)) return text;
+      const date = normalizeDateValue(value);
+      return date ? date.slice(0, 7) : "";
+    }
+
+    function normalizeDateValue(value, XLSXLib) {
+      if (value instanceof Date && !Number.isNaN(value.getTime())) return toISODate(value);
+      if (typeof value === "number") {
+        const lib = XLSXLib || (typeof XLSX !== "undefined" ? XLSX : null);
+        if (lib && lib.SSF && lib.SSF.parse_date_code) {
+          const parsed = lib.SSF.parse_date_code(value);
+          if (parsed) return String(parsed.y).padStart(4, "0") + "-" + String(parsed.m).padStart(2, "0") + "-" + String(parsed.d).padStart(2, "0");
+        }
+      }
+      const text = cleanText(value);
+      if (/^\d{4}-\d{2}-\d{2}/.test(text)) return text.slice(0, 10);
+      const dot = text.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+      if (dot) return dot[3] + "-" + dot[2].padStart(2, "0") + "-" + dot[1].padStart(2, "0");
+      const slash = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      if (slash) return slash[3] + "-" + slash[2].padStart(2, "0") + "-" + slash[1].padStart(2, "0");
+      const date = new Date(text);
+      return Number.isNaN(date.getTime()) ? "" : toISODate(date);
+    }
+
+    function toISODate(date) {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const day = String(date.getDate()).padStart(2, "0");
+      return year + "-" + month + "-" + day;
+    }
+
+    function pick(row, keys) {
+      for (const key of keys) {
+        if (Object.prototype.hasOwnProperty.call(row, key) && row[key] !== "") return row[key];
+      }
+      const lowerMap = new Map(Object.keys(row).map(function (key) { return [key.toLowerCase(), key]; }));
+      for (const key of keys) {
+        const actual = lowerMap.get(String(key).toLowerCase());
+        if (actual && row[actual] !== "") return row[actual];
+      }
+      return "";
+    }
+
+    function getSheetByNames(wb, names) {
+      for (const name of names) {
+        if (wb.Sheets[name]) return wb.Sheets[name];
+      }
+      const lower = new Map(wb.SheetNames.map(function (name) { return [name.toLowerCase(), name]; }));
+      for (const name of names) {
+        const actual = lower.get(name.toLowerCase());
+        if (actual) return wb.Sheets[actual];
+      }
+      return null;
+    }
+
+    function formatMoney(value) {
+      const number = Number(value) || 0;
+      const formatted = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 }).format(number);
+      const currency = state.settings.currency || "₽";
+      return currency === "$" || currency === "€" ? currency + formatted : formatted + " " + currency;
+    }
+
+    function formatPercent(value) {
+      return new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 1 }).format(Number(value) || 0) + "%";
+    }
+
+    function formatDate(dateString) {
+      const date = new Date(dateString + "T00:00:00");
+      return new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" }).format(date);
+    }
+
+    function getTodayDate() {
+      return toISODate(new Date());
+    }
+
+    function getCurrentMonth() {
+      return getTodayDate().slice(0, 7);
+    }
+
+    function createId() {
+      if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+      return "id_" + Date.now() + "_" + Math.random().toString(16).slice(2);
+    }
+  </script>
+</body>
+</html>
